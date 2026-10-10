@@ -22,3 +22,6 @@ Thumbs.db
 # 变异测试的临时产物
 .vitest-mutation.log
 .mutation-bak.json
+
+# 手测时的备份（不进仓库）
+.data.json.bak-*
