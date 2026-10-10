@@ -3,7 +3,8 @@
 《认知觉醒》工字格笔记法的 Obsidian 实现。每天一个 Markdown 文件，
 待办、计划、实际三栏联动 —— **数据存在你的 vault 里**，能被全文搜索、能 git、能跟着同步走。
 
-![界面](screenshot.png)
+<!--上架前需要补两张图：icon.png（社区列表的图标，100x100 PNG）
+     和 screenshot.png（README 顶部的界面截图，16:9 宽一些）。 -->
 
 ## 为什么数据是 Markdown 而不是数据库
 
@@ -81,13 +82,34 @@
 ```bash
 npm install
 npm run build       # 产出 main.js + styles.css，并自检
-npm test            # 130 个用例
+npm test            # 150 个用例
+npm run mutation    # 变异测试：注入 9 个错误，确认断言还活着
 ```
 
 开发时建议装[Hot-Reload 插件](https://github.com/pjeby/hot-reload)，`Ctrl+R` 重新加载。
 
 构建产物自检会**真的 `require` 一遍 main.js** ——「esbuild 退出码 0」不等于
-「Obsidian 能加载」，引用错、循环依赖、CJS 包装坏了都要require 一次才暴露。
+「Obsidian 能加载」，引用错、循环依赖、CJS 包装坏了都要 require 一次才暴露。
+自检里还包含了社区目录的机器校验规则（命名规范、description 的收尾标点等），
+把审核会打回的问题提前到本地。
+
+`npm run mutation` 是这个项目最有价值的一条命令：**「测试全绿」不等于「测试有效」**。
+断言可能匹配到注释而不是代码（这个项目栽过），也可能被子串匹配绕过。
+这个脚本逐个注入已知错误，确认对应断言会红 —— 改代码后跑一遍，能发现
+「我以为在测的东西其实没在测」。
+
+## 发版
+
+```bash
+npm version patch     # 自动同步 manifest.json 与 versions.json，打不带 v 前缀的 tag
+git push --tags       # 触发 .github/workflows/release.yml，自动建 Release
+```
+
+Release 附件是 `main.js` + `manifest.json` + `styles.css` 三个文件。
+**tag 必须严格等于 manifest 的 `version` 且不带 `v` 前缀** ——
+Obsidian 按 version 找同名 tag，带 `v` 匹配不上，用户装不到更新。
+
+上架到社区目录只需提交一次，之后的版本更新不用再提 PR。
 
 ## 许可
 
