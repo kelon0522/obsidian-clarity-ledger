@@ -69,15 +69,19 @@ export const MUTATIONS = [
   {
     name: '清掉 button 的一项 reset（灰底方块会露出来）',
     file: 'src/index.css',
-    from: /(\.cl-cal button \{[^}]*?)appearance: none;/,
+    // 只删**标准**那条，`-webkit-` 前缀的留着 ——
+    // 这正是原断言 toContain 的盲区（子串匹配到前缀那条也算命中）
+    from: /(\.cl-cal button \{[^}]*?)\n  appearance: none;/,
     to: '$1',
-    expectRed: ['清掉了主题给 button'],
+    expectRed: ['默认外观'],
   },
   {
     name: '日期格改回长串工具类（会被主题压掉）',
     file: 'src/components/Calendar.tsx',
-    from: /'cl-day'/g,
-    to: "'aspect-square bg-ink text-white'",
+    // className 是多行模板字符串，`cl-day` 后面还跟着别的类名 ——
+    // 所以替换的是整个 className 值，不是单个词
+    from: /className=\{`cl-day font-hw text-xs cursor-pointer/,
+    to: "className={`aspect-square bg-ink text-white hover:bg-soft font-hw text-xs cursor-pointer",
     expectRed: ['日期格用具名 class'],
   },
   {

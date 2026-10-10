@@ -143,10 +143,16 @@ describe('模块绑定 · @ 指向本仓库 src', () => {
     expect(fmt(480)).toBe('08:00')
   })
 
-  /** `--spacing-row` 与 `ROWH` 不同步的话，时间块高度会和横格线错位 */
+  /**
+   * `--spacing-row` 与 `ROWH` 不同步的话，时间块高度会和横格线错位。
+   *
+   * **必须剥注释** —— CSS 头部那段注释里就写着「必须等于 ROWH（40px）」，
+   * 不剥的话第一处匹配到的可能是注释里的 40px。
+   * （这条现在被变异测试覆盖：把 40 改成 23 会红。）
+   */
   it('CSS 里的 --spacing-row 等于 ROWH', async () => {
     const { ROWH } = await import('@/core/time')
-    const css = read('src/index.css')
+    const css = stripCssCommentLines(read('src/index.css'))
     const m = css.match(/--spacing-row:\s*(\d+)px/)
     expect(m).not.toBeNull()
     expect(Number(m![1])).toBe(ROWH)
@@ -163,17 +169,22 @@ describe('模块绑定 · @ 指向本仓库 src', () => {
 
 describe('构建配置', () => {
   it('esbuild 的 jsx 走 automatic（否则真机报 React is not defined）', () => {
-    /* 默认的transform 模式会产出 React.createElement(...)，
+    /* 默认的 transform 模式会产出 React.createElement(...)，
        而组件只 import 了 { useState }，作用域里没有 React 绑定。
-       **构建退出码 0、产物大小正常，只在真机渲染时炸。***
-       变异测试：删掉这行断言会红。 */
-    expect(read('esbuild.config.mjs')).toMatch(/jsx:\s*'automatic'/)
-    expect(read('vitest.config.ts')).toMatch(/jsx:\s*'automatic'/)
+       **构建退出码 0、产物大小正常，只在真机渲染时炸。**
+
+       **必须先剥注释再断言** ——
+       变异测试抓到过：删掉真配置那一行，这个断言仍然全绿，
+       因为esbuild.config.mjs 的**注释里**也写着 `jsx: 'automatic'`
+       （那段注释正是在解释为什么必须配）。断的是注释，不是代码。*/
+    expect(stripComments(read('esbuild.config.mjs'))).toMatch(/jsx:\s*'automatic'/)
+    expect(stripComments(read('vitest.config.ts'))).toMatch(/jsx:\s*'automatic'/)
   })
 
   it('@ 只指向本仓库的 src（不再有回退到 app/src 的分支）', () => {
     const src = read('esbuild.config.mjs')
-    expect(src).toContain("alias: { '@': path.join(here, 'src') }")
+    // 同样要剥注释 —— 配置项的**注释里**就在讲「早先怎么映射到 app/src」
+    expect(stripComments(src)).toContain("alias: { '@': path.join(here, 'src') }")
     expect(stripComments(src)).not.toContain('app/src')
   })
 
@@ -261,19 +272,64 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
     expect(code.slice(i).match(/@layer/g) ?? []).toHaveLength(0)
   })
 
-  it('清掉了主题给 button 的四项默认外观', () => {
+  /**
+   * 这组断言的**陷阱**：段里有 `appearance: none` **两处** ——
+   * 一处是标准属性，一处是 `-webkit-appearance: none`（Safari 旧版要）。
+   * `toContain('appearance: none')` 删掉一处仍匹配另一处 ——
+   * **变异测试抓到过这个假绿。**
+   *
+   * 做法：去掉前缀后，每条声明的**出现次数**要符合预期。
+   * `appearance: none` 恰好 2 次（一标准 + 一前缀），其余各 1 次。
+   * 变异删掉任一条，次数都会变 —— 抓得到。
+   */
+  it('清掉了主题给 button 的默认外观（按出现次数算，前缀变体已归并）', () => {
     const css = read('src/index.css')
     const seg = css.slice(css.indexOf('.cl-cal button'), css.indexOf('.cl-nav'))
-    // 这四项是「灰底方块」的来源，少一个就会露出来
-    expect(seg).toContain('appearance: none')
-    expect(seg).toContain('background: transparent')
-    expect(seg).toContain('border: 0')
-    expect(seg).toContain('box-shadow: none')
+
+    /* 提取「属性: 值」形式的声明 —— **正则里不要带分号**。
+       带上的话提取结果全是 `appearance: none;`，而下面的 count 比的是
+       `appearance: none`（无分号），恒为 0。
+       **这个假绿我自己造了两轮**：先写成带分号的提取 + 不带分号的期望，
+       报错是「expected +0 to be 2」，看起来像「声明被删了」，
+       实际是**两边格式不一致**。
+
+       前缀要去掉，这样「删了标准那条」和「删了前缀那条」都会让次数变化。 */
+    const decls = (seg.match(/^[ \t]*(?:-webkit-|-moz-|-ms-)?[a-z-]+:\s*[^;]+/gm) ?? []).map((s) =>
+      s.trim().replace(/^-(?:webkit|moz|ms)-/, ''),
+    )
+    const count = (decl: string) => decls.filter((d) => d === decl).length
+
+    // 先确认提取本身有效 —— 否则 count 全是 0，报错会指向错误的根因
+    expect(decls.length).toBeGreaterThan(5)
+    expect(decls[0]).not.toMatch(/;$/) // 防回归：提取结果不该带分号
+
+    // 标准 + -webkit- 两条都在，缺一条 Safari 旧版就会露出来
+    expect(count('appearance: none')).toBe(2)
+
+    // 这几项是「灰底方块」的来源，少一个就会露出来
+    expect(count('background: transparent')).toBe(1)
+    expect(count('border: 0')).toBe(1)
+    expect(count('box-shadow: none')).toBe(1)
+
     /* padding 是「7 列对不齐」的直接原因：
        aspect-ratio 算 content-box，主题给的 padding 把它撑成不等宽。 */
-    expect(seg).toContain('padding: 0')
-    expect(seg).toContain('min-width: 0')
-    expect(seg).toContain('min-height: 0')
+    expect(count('padding: 0')).toBe(1)
+    expect(count('min-width: 0')).toBe(1)
+    expect(count('min-height: 0')).toBe(1)
+  })
+
+  /**
+   * 上一条按「去前缀后计数」判断，这里单独数**带前缀的原文行数** ——
+   * 上一条把前缀归并掉之后，就区分不出「删了标准那条」还是「删了前缀那条」了。
+   * 两条配合才能把两种变异都抓住。
+   */
+  it('appearance 同时写了标准属性和 -webkit- 前缀（Safari 旧版要）', () => {
+    const css = read('src/index.css')
+    const seg = css.slice(css.indexOf('.cl-cal button'), css.indexOf('.cl-nav'))
+    // 标准那条：行首就是 appearance，前面没有 -
+    expect(seg).toMatch(/^[ \t]*appearance:\s*none;/m)
+    // 前缀那条：明确写出 -webkit-
+    expect(seg).toMatch(/^[ \t]*-webkit-appearance:\s*none;/m)
   })
 
   it('日期格用具名 class 而不是长串工具类', () => {
@@ -281,16 +337,25 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
     expect(cal).toContain('cl-day')
     expect(cal).toContain('cl-nav')
     expect(cal).toContain('cl-dot')
+
     /* 旧的工具类写法不该还在。
-       **只扫 className 那一行** —— 注释里提到 aspect-square 是正常的
-       （那段注释正是在解释为什么不能用它）。全文扫会误报。 */
-    const clsLines = cal.split('\n').filter((l) => l.includes('className='))
-    expect(clsLines.length).toBeGreaterThan(0)
-    clsLines.forEach((l) => {
-      expect(l).not.toContain('aspect-square')
-      expect(l).not.toContain('bg-ink text-white')
-      expect(l).not.toContain('hover:bg-soft')
-    })
+       **必须先剥注释** —— 组件里有段注释正是在解释「为什么不能用
+       aspect-square」（宿主主题会压掉工具类）。不剥的话全文扫必误报。
+
+       也不能按行扫 `className=`：日期格的 className 是**多行模板字符串**，
+       工具类写在续行里，按行扫会漏掉 —— 变异测试抓到过这个假绿。 */
+    const code = stripComments(cal)
+    for (const banned of ['aspect-square', 'bg-ink text-white', 'hover:bg-soft']) {
+      expect(code).not.toContain(banned)
+    }
+
+    /* 反向锁住：具名 class 必须真的用在了 className 里。
+       只断「日历类名在文件里出现过」不够 —— 它可能只在注释里。 */
+    const clsNames = [...code.matchAll(/className=\{?[`"]([^`"{}]*)/g)].map((m) => m[1] ?? '')
+    const all = clsNames.join(' ')
+    expect(all).toContain('cl-day')
+    expect(all).toContain('cl-nav')
+    expect(all).toContain('cl-dot')
   })
 
   it('cur 是实心玫红块 —— 用户最直观的对错信号', () => {
