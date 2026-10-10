@@ -115,13 +115,15 @@ export const MUTATIONS = [
     expectRed: ['不影响我们的文件迁移'],
   },
   {
+    /* 用字符串精确替换而不是正则。
+       正则里 `f.length + 1` 的 `+` 会被当量词，这条变异因为**正则没匹配上**
+       被报成「变异是假的」—— 而那恰恰意味着这条断言从未被验证过。
+       变异脚本里用正则的风险就在这里：没匹配上和「断言无效」
+       长得很像，但含义完全相反。 */
     name: '迁移：目录判断用前缀匹配（子目录里的文件会被误搬）',
     file: 'src/md/migrate.ts',
-    // 去掉「必须是直接子项」那道检查，只留 startsWith ——
-    // 前缀写法会把子目录里的文件也当成旧目录的数据搬走，
-    // 而 listFiles 用同样的前缀判断读不到它们 → 静默搬走看不见的文件
-    from: /if \(!path\.startsWith\(f \+ '\/'\)\) return false\n  const rest = path\.slice\(f\.length \+ 1\)\n  return !rest\.includes\('\/'\)/,
-    to: "return path.startsWith(f + '/')",
+    string: "  if (!path.startsWith(f + '/')) return false\n  const rest = path.slice(f.length + 1)\n  return !rest.includes('/')",
+    stringTo: "  return path.startsWith(f + '/')",
     expectRed: ['子目录'],
   },
   {
@@ -134,11 +136,22 @@ export const MUTATIONS = [
   },
 ]
 
-/** 改文件，返回恢复函数 */
+/** 改文件，返回 { changed } —— changed=false 表示变异没生效（正则没匹配上） */
 export function applyMutation(m) {
   const path = join(root, m.file)
   const original = readFileSync(path, 'utf8')
-  let mutated = original.replace(m.from, m.to)
+
+  let mutated
+  if (typeof m.string === 'string') {
+    /* 字符串精确替换。
+       **优先用这个而不是正则** —— 正则里 `f.length + 1` 的 `+` 会被当量词，
+       没匹配上时报「变异是假的」，而那恰恰意味着这条断言从未被验证过。
+       变异脚本里这两种失败长得像，含义完全相反。*/
+    if (!original.includes(m.string)) return { original, mutated: original, path, changed: false }
+    mutated = original.replace(m.string, m.stringTo)
+  } else {
+    mutated = original.replace(m.from, m.to)
+  }
   if (m.after) mutated = m.after(mutated)
   return { original, mutated, path, changed: mutated !== original }
 }
