@@ -518,16 +518,88 @@ describe('存储位置可配置（不硬编码）', () => {
   })
 
   it('改存储位置后会重开视图（否则界面还显示旧数据）', () => {
-    const tab = readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8')
-    expect(tab).toContain('reopenView')
-    expect(tab).toContain('flushNow()')
-    /* 顺序不能反：先 flush 再重开。反了的话待写的数据会被写进旧目录。 */
-    expect(tab.indexOf('flushNow()')).toBeLessThan(tab.indexOf('reopenView()'))
+    const code = stripComments(readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8'))
+    expect(code).toContain('reopenView')
+    expect(code).toContain('flushNow()')
+    /* 顺序不能反：先 flush 再重开。反了的话待写的数据会被写进旧目录，
+       而迁移已经跑完了，没人再搬它 —— 那一天就静默留在旧目录里。 */
+    expect(code.indexOf('flushNow()')).toBeLessThan(code.indexOf('reopenView()'))
   })
 
-  it('切目录前会提示那边已有文件（防「看起来数据没了」）', () => {
-    const tab = readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8')
-    expect(tab).toContain('hasAnyFile')
+  /**
+   * 迁移的三个顺序约束。反一个都是静默的数据问题，不是报错。
+   *
+   * 1. **flush 在迁移之前** —— 待写的数据要先落到旧位置，否则永远没人搬它
+   * 2. **迁移用旧配置、探测用新配置** —— 前者要扫旧目录，后者要扫新目录
+   * 3. **保存配置在迁移之后** —— 反过来的话「目标被占」时界面已经指向新目录，
+   *    但文件没搬过去，看起来就是数据全没了
+   */
+  it('迁移的顺序：flush → 探测 → 迁移 → 存配置 → 重开', () => {
+    const src = readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8')
+    const code = stripComments(src)
+    /* **只看 apply 方法里 reloadData 分支之后的那一段。**
+       两个坑叠在一起：
+       1. `commitLocation` 里还有一次 saveSettings（校验不过时的提前返回），
+          全文 indexOf 会抓到它
+       2. `apply` 内部 `if (!reloadData)` 分支也有一次 saveSettings ——
+          那是「改启动时打开」用的，不涉及迁移，天然排在 migrateTo 之前
+
+       所以：从 `migrateTo` 的位置开始找 saveSettings，才是「迁移那次保存」。*/
+    const start = code.indexOf('private async apply(')
+    expect(start).toBeGreaterThan(-1)
+    const seg = code.slice(start, code.indexOf('\n  private ', start + 10))
+
+    const at = (s: string, from = 0) => {
+      const i = seg.indexOf(s, from)
+      expect(i, `apply 里找不到 ${s}`).toBeGreaterThan(-1)
+      return i
+    }
+
+    const flush = at('flushNow()')
+    const probe = at('hasAnyFile')
+    const migrate = at('migrateTo')
+    // 迁移那次的保存：从 migrateTo 往后找
+    const save = at('saveSettings', migrate)
+    const reopen = at('reopenView')
+
+    expect(flush).toBeLessThan(probe)
+    expect(probe).toBeLessThan(migrate)
+    expect(migrate).toBeLessThan(save)
+    expect(save).toBeLessThan(reopen)
+  })
+
+  it('迁移用的 store 用旧配置，探测用的用新配置', () => {
+    const code = stripComments(readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8'))
+    // 探测目标目录 → 新配置
+    expect(code).toMatch(/new VaultStore\(this\.app,\s*next\)/)
+    // 扫旧目录做迁移 → 旧配置
+    expect(code).toMatch(/new VaultStore\(this\.app,\s*prev\)/)
+  })
+
+  it('全部搬失败时不落盘（否则界面指向空目录，看着像数据没了）', () => {
+    const src = readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8')
+    const guard = src.indexOf('allFailed')
+    expect(guard).toBeGreaterThan(-1)
+    /* 守门必须在 saveSettings 之前 —— 之后就是「已经指向新目录但没搬过去」 */
+    expect(guard).toBeLessThan(src.indexOf('saveSettings', guard))
+    expect(src).toMatch(/allFailed[\s\S]{0,400}return/)
+  })
+
+  it('跳过的和失败的文件要点名（只报「已移动 3 个」等于没报）', () => {
+    const src = readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8')
+    const report = src.indexOf('private report(')
+    expect(report).toBeGreaterThan(-1)
+    const seg = src.slice(report, report + 1400)
+    expect(seg).toContain('outcome.skipped')
+    expect(seg).toContain('outcome.failed')
+    expect(seg).toContain('fromPath')
+  })
+
+  it('空目录不自动删（那是用户自己建的）', () => {
+    const code = stripComments(readFileSync(join(here, 'src', 'md', 'vault.ts'), 'utf8'))
+    /* 只判断空不空、告诉用户可以删 —— 不调 vault.delete / trash */
+    expect(code).toContain('isFolderEmpty')
+    expect(code).not.toMatch(/isFolderEmpty[\s\S]{0,300}vault\.delete|vault\.trash/)
   })
 
   /**

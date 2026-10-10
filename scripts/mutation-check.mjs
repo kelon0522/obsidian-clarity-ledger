@@ -105,6 +105,30 @@ export const MUTATIONS = [
     to: '"@/*": ["src/*", "../app/src/*"]',
     expectRed: ['paths 只有一条'],
   },
+
+  /* ---------- 迁移规划（破坏性操作，必须有断言守着） ---------- */
+  {
+    name: '迁移：冲突初值改回same-day（全表被标成冲突，迁移静默全跳过）',
+    file: 'src/md/migrate.ts',
+    from: /let conflict: MigrationItem\['conflict'\] = null/,
+    to: "let conflict: MigrationItem['conflict'] = 'same-day'",
+    expectRed: ['不影响我们的文件迁移'],
+  },
+  {
+    name: '迁移：目录判断用前缀匹配（子目录里的文件会被误搬）',
+    file: 'src/md/migrate.ts',
+    from: /return path\.startsWith\(f \+ '\/'\)\n  const rest = path\.slice\(f\.length \+ 1\)\n  return !rest\.includes\('\/'\)/,
+    to: "return path.startsWith(f + '/')",
+    expectRed: ['子目录'],
+  },
+  {
+    name: '迁移：不检查目标是否被占就执行（同一天的两份数据会被覆盖）',
+    file: 'src/md/migrate.ts',
+    // 只删「目标被占」那个分支，保留 name-clash 分支
+    from: /\s*\} else if \(pathSet\.has\(toPath\) && !vacating\.has\(toPath\)\) \{[^}]*\}/,
+    to: '\n    }',
+    expectRed: ['目标已有同一天'],
+  },
 ]
 
 /** 改文件，返回恢复函数 */

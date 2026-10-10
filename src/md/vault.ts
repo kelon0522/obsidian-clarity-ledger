@@ -28,6 +28,8 @@ import { normalizeDB } from '@/core/normalize'
 import { DEFAULT_SETTINGS, fullPath, parseName } from '@/config/settings'
 import type { PluginSettings } from '@/config/settings'
 import { parseAll, parseDay, renderDay } from './codec'
+import { emptyOutcome, planMigration } from './migrate'
+import type { FileRef, MigrationOutcome } from './migrate'
 
 export interface LoadResult {
   db: DB
@@ -150,15 +152,7 @@ export class VaultStore {
   }
 
   private async ensureFolder(): Promise<void> {
-    const parts = this.cfg.folder.trim().replace(/\/+$/, '').split('/')
-    let cur = ''
-    for (const p of parts) {
-      cur = cur ? `${cur}/${p}` : p
-      if (!p) continue
-      if (!this.app.vault.getAbstractFileByPath(cur)) {
-        await this.app.vault.createFolder(cur)
-      }
-    }
+    await this.ensureFolderFor(this.cfg.folder)
   }
 
   /** 读单天（外部改动后同步用） */
@@ -194,6 +188,97 @@ export class VaultStore {
    */
   async hasAnyFile(): Promise<boolean> {
     return this.listFiles().length > 0
+  }
+
+  /**
+   * 迁移到新的存储位置 —— **搬文件 + 按新模板改名**。
+   *
+   * ## 顺序很重要
+   *
+   * 1. **先 flush**（调用方负责）—— 否则待写的数据会落在旧目录，之后没人搬它
+   * 2. **先改配置、再搬**：搬的时候要按「新配置」算目标路径，
+   *    所以 `this.cfg` 得先切过去。切了之后 `listFiles()` 读的是新目录，
+   *    所以迁移计划必须**在切之前**算完 —— 这就是 `planMigration` 的另一个用途。
+   *
+   * ## 为什么逐个文件 try/catch
+   *
+   * 一批文件里有一个搬失败（权限、文件被锁、磁盘满），
+   * 不该让其余的都不搬。所以每个独立处理，最后汇总报给用户。
+   *
+   * ## 冲突一律跳过，绝不覆盖
+   *
+   * 目标位置已经有文件时跳过 —— 那是另一个日期的数据，或者是用户自己写的东西。
+   * 覆盖的后果是**不可逆的**，跳过只是「有东西没搬过去」，用户能自己处理。
+   */
+  async migrateTo(next: PluginSettings): Promise<MigrationOutcome> {
+    const outcome = emptyOutcome()
+
+    const all: FileRef[] = this.app.vault.getMarkdownFiles().map((f) => ({
+      path: f.path,
+      basename: f.basename,
+    }))
+    const plan = planMigration(all, this.cfg, next)
+    outcome.untouched = plan.untouched.length
+
+    const actionable = plan.items.filter((i) => i.kind !== 'same')
+    if (!actionable.length) return outcome
+
+    // 目标目录可能还不存在 —— 换目录时先建出来，否则第一次 rename 就失败
+    await this.ensureFolderFor(next.folder)
+
+    for (const item of actionable) {
+      if (item.conflict) {
+        outcome.skipped.push({
+          key: item.key,
+          fromPath: item.fromPath,
+          reason: item.conflict,
+        })
+        continue
+      }
+      try {
+        const f = this.app.vault.getAbstractFileByPath(item.fromPath)
+        if (!f) {
+          // 计划和执行之间文件被删了 —— 当成跳过，不算失败
+          outcome.skipped.push({ key: item.key, fromPath: item.fromPath, reason: 'same-day' })
+          continue
+        }
+        await this.app.fileManager.renameFile(f as TFile, item.toPath)
+        if (item.kind === 'rename') outcome.renamed++
+        else outcome.moved++
+        /* stamp 不用动：它按**日期键**索引，而迁移不改变日期键。
+           （早先在这儿重新读 mtime 写回去 —— `getAbstractFileByPath`
+           返回的是 `TAbstractFile`，上面没有 `stat`，类型就报错了。
+           而且没必要：迁移后视图会重开，新的 store 从头读 stamp。）*/
+      } catch (e) {
+        outcome.failed.push({
+          path: item.fromPath,
+          error: (e as Error)?.message ?? String(e),
+        })
+      }
+    }
+
+    outcome.oldFolderEmpty = this.isFolderEmpty(plan.oldFolder)
+    return outcome
+  }
+
+  /** 建目录（按配置里的路径，支持多级） */
+  private async ensureFolderFor(folder: string): Promise<void> {
+    const parts = folder.trim().replace(/\/+$/, '').split('/')
+    let cur = ''
+    for (const p of parts) {
+      cur = cur ? `${cur}/${p}` : p
+      if (!p) continue
+      if (!this.app.vault.getAbstractFileByPath(cur)) {
+        await this.app.vault.createFolder(cur)
+      }
+    }
+  }
+
+  /** 目录下还有没有任何东西。空目录不自动删 —— 那是用户自己建的 */
+  private isFolderEmpty(folder: string): boolean {
+    const f = folder.trim().replace(/\/+$/, '')
+    if (!f) return false
+    return !this.app.vault.getMarkdownFiles().some((x) => x.path.startsWith(f + '/'))
   }
 }
 
