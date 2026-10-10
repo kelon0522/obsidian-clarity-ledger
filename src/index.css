@@ -140,11 +140,20 @@
   }
 }
 
-/* 尊重系统的「减少动效」设置 */
+/* 尊重系统的「减少动效」设置。
+   **作用域必须限定在 .cl-root 里。**
+
+   styles.css 是**整个 vault 全局加载**的 —— 不只这个视图，用户的日记、
+   主题、别的插件全都吃这份CSS。早先这里写的是裸 `*` 选择器，
+   后果是：用户给整个 Obsidian 设了「减少动效」，打开这个插件之后
+   所有界面的动效被强行压到 0.01ms（**别的插件也跟着失效**）。
+
+   社区目录的 reviewer 会盯这类「往用户 vault 里注入全局样式」的事，
+   改成 `.cl-root *` 之后行为不变，但作用域干净了。*/
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  .cl-root *,
+  .cl-root *::before,
+  .cl-root *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
@@ -186,15 +195,37 @@
   .blk:active {
     cursor: grabbing;
   }
+}
 
+/* ==================================================================
+ * 键盘焦点
+ * ==================================================================
+ *
+ * 键盘焦点必须看得见 —— 这是可访问性的底线。
+ * 时间轴能 Tab 遍历，没有这条键盘用户根本不知道自己在哪。
+ *
+ * **必须留在 @layer 之外，而且必须带 `.cl-root` 前缀。**
+ *
+ * 两个坑叠在一起：
+ *
+ * 1. 早先写的是裸 `:focus-visible` —— Obsidian 主题 CSS 不分层，
+ *    用户的 vault 里**所有**可聚焦元素（包括别的插件）都会套上玫红描边。
+ * 2. 加了 `.cl-root` 前缀但**留在 `@layer base` 里** —— Tailwind v4
+ *    处理 layer 时会做选择器重写，产物里前缀被剥掉了：
+ *    `styles.css` 里查无`.cl-root :focus-visible`，
+ *    只剩一条裸的 `:focus-visible{...}`，等于坑 1 从没填上。
+ *    （与下面「日历隔离层」是同一个病：**隔离层放进 layer 等于没写**。）
+ *
+ * `scripts/verify-build.mjs` 会扫产物、剥掉 `.cl-root ` 前缀后
+ * 断言不再出现裸选择器 —— 就是防这个。
+ */
+.cl-root :focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@layer base {
   /*
-   * 键盘焦点必须看得见 —— 这是可访问性的底线。
-   * 时间轴能 Tab 遍历，没有这条键盘用户根本不知道自己在哪。
-   */
-  :focus-visible {
-    outline: 2px solid var(--color-ink);
-    outline-offset: 2px;
-  }
 
   /*
    * Obsidian 的 `mod-*` 类会改全局字体/字号，工字格的手写体会被冲掉。

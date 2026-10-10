@@ -1,0 +1,71 @@
+name: CI
+
+# PR / push 时跑一遍完整闸门。
+#
+# ## 为什么需要这个（和 release.yml 的区别）
+#
+# release.yml 只在打 tag 时跑 —— 也就是说**发版之前什么都拦不住**。
+# 这个 workflow 是提交前的那道闸：任何人提 PR，CI 会自动告诉他
+# 「测试挂了」/「类型不过」/「产物自检没过」，不用等作者手动跑一遍。
+#
+# 社区插件的外部贡献者不会手动跑 `npm test` 再提交 ——
+# 所以这道闸必须在 GitHub 上自动跑，否则收到的是「我不知道怎么测」这类 issue。
+#
+# **唯一发版前必须人工确认的事**：写 vault 的迁移逻辑。
+# CI 能验「迁移不丢数据」，验不了「这个行为是不是产品想要的」。
+# 改`src/md/migrate.ts` / `src/config/SettingsTab.ts` 时，
+# 按 `手测清单.md` 第六节在真机跑一遍。
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 同一个 PR 的新 push 取消上一次 —— 连续推 5 次只跑最后一次，
+  # 省 Actions 配额（公开仓库 2000 分钟/月，不宽裕）
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # 要提交 package-lock.json，否则 CI 和每个人的依赖版本都不一样
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck + Build
+        run: npm run build
+
+      # 产物自检：真的require 一遍 main.js、检查样式齐备、
+      # 断言社区目录的机器校验规则（命名规范、description 收尾标点等）。
+      # **这一步过了，才算真的能发给用户。**
+      - name: Verify build
+        run: node scripts/verify-build.mjs
+
+      # 上架资源在不在 —— 社区列表的图标取自仓库根目录的 icon.png，
+      # 缺了审核会直接打回。跑测试是发现不了这种缺失的。
+      - name: Check submission assets
+        run: |
+          test -f icon.png      || { echo "::error::缺 icon.png（社区列表图标，100x100 PNG）"; exit 1; }
+          test -f screenshot.png || { echo "::error::缺 screenshot.png（README 顶部截图）"; exit 1; }
+          test -f LICENSE       || { echo "::error::缺 LICENSE（社区目录硬性要求）"; exit 1; }
+          node -e "
+            const s=require('fs').statSync('icon.png');
+            console.log('icon.png', s.size, 'bytes');
+          "
+          echo "上架资源齐备"

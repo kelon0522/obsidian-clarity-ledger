@@ -16,9 +16,10 @@
     "build:css": "vite build --config vite.css.config.mts && node scripts/move-css.mjs",
     "build:js": "tsc --noEmit -p tsconfig.json && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bash scripts/run-tests.sh",
+    "test": "node scripts/test.mjs",
     "test:watch": "vitest",
-    "mutation": "bash scripts/mutation.sh",
+    "mutation": "node scripts/mutation.mjs",
+    "lock:fix": "node scripts/fix-lock-optional.mjs",
     "version": "node -e \"const fs=require('fs'),m=require('./manifest.json'),p=require('./package.json');m.version=p.version;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\\n');const v=require('./versions.json');v[p.version]=m.minAppVersion;fs.writeFileSync('versions.json',JSON.stringify(v,null,2)+'\\n')\" && git add manifest.json versions.json && git commit -m \"chore: v\""
   },
   "dependencies": {

@@ -106,8 +106,9 @@ echo     2. Settings -^> Community plugins -^> turn OFF Safe mode
 echo     3. Enable "Clarity Ledger"
 echo     4. Click the calendar-check icon on the left ribbon
 echo.
-echo   Then walk through TESTING.md - especially items 14-17
-echo   (external edits to the .md file), which only apply here.
+echo   Then walk through 手测清单.md - especially sections 3 and 6
+echo   (external edits to the .md file, and moving the storage folder),
+echo   which only apply to a real vault install.
 echo.
 pause
 endlocal

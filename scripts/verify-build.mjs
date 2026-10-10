@@ -167,34 +167,6 @@ if (existsSync(MAIN)) {
 
 /* ---------- 重复打包检测（白屏的根因）---------- */
 const META = join(here, '.meta.json')
-/* ---------- 把 main.js 真的跑起来 ---------- */
-/* require 只能证明「模块能加载」，证明不了「组件能挂起来渲染」。
-   2026-10-10 连续两次真机白屏（两份 React / JSX 模式错）都是在这一步之后
-   才暴露的 —— 所以这里要挂 React 进去渲染一遍。 */
-{
-  const obsidianStub = {
-    Plugin: class {}, ItemView: class {}, Notice: class {},
-    WorkspaceLeaf: class {}, PluginSettingTab: class {},
-    Modal: class {}, Setting: class {}, TFile: class {},
-  }
-  const origLoad = Module._load
-  Module._load = function (req, ...rest) {
-    if (req === 'obsidian') return obsidianStub
-    return origLoad.call(this, req, ...rest)
-  }
-  let renderErr = null
-  try {
-    // 动态取：main.js 里没导出视图组件，这里只验「加载 + Plugin 形态」，
-    // 真正的渲染由 src/view/ledger.smoke.test.tsx 在 jsdom 里验（那边有 DOM）
-    const loaded = require(MAIN)
-    ok('main.js 导出了可用的 Plugin 类', typeof loaded.default === 'function')
-  } catch (e) {
-    renderErr = e
-    ok('main.js 加载时不抛异常', false, String(renderErr.message))
-  } finally {
-    Module._load = origLoad
-  }
-}
 
 if (existsSync(META)) {
   const meta = JSON.parse(readFileSync(META, 'utf8'))
@@ -240,6 +212,58 @@ if (existsSync(CSS)) {
   /* 横格间距必须等于 ROWH(40px)，否则块高和格线错位 —— core/time.ts 里定义的 */
   ok('横格间距 = ROWH 40px', /40px/.test(css) || /--spacing-row:\s*40px/.test(css))
   ok('含手写体字体栈（KaiTi）', /KaiTi|KaiTi|楷体/i.test(css))
+
+  /* ---------- 全局样式污染 ----------
+     styles.css 是**整个 vault 全局加载**的：用户的日记、主题、别的插件
+     全都吃这份 CSS。所以任何裸的全局选择器都会溢出到别人的界面上。
+
+     这两条曾经真的写成了裸 `*` 和裸 `:focus-visible`：
+     - 用户给整个 Obsidian 设了「减少动效」，装了这个插件之后
+       **所有界面**（包括别的插件）的动效被压到 0.01ms
+     - 键盘 Tab 一下，vault 里所有可聚焦元素都套上玫红描边
+
+     两者都是「插件没做什么坏事，但用户就是觉得装了之后界面变了」，
+     而且社区目录的 reviewer 会盯这一类注入全局样式的行为。
+
+     ## 校验方式：断言「限定版存在，且裸版不存在」
+
+     ⚠️ **早先那版是剥掉 `.cl-root ` 前缀再找裸选择器 —— 错的。**
+     剥完之后前一条规则的 `}` 会紧贴 `:focus-visible{`，
+     于是「上一条规则的收尾 + 我们的选择器」被当成了裸选择器，误报。
+     早先更糟的一版把正则写成 `/(^|[;\s]):focus-visible/`，连 Tailwind 的
+     转义工具类 `.focus-visible\\:opacity-100:focus-visible` 都没排除掉，
+     永远红 —— **断言一直错而没人发现，因为没人跑过它。**
+
+     现在直接查两件事，都不靠剥前缀：
+       1. `.cl-root :focus-visible` / `.cl-root *` 必须存在
+       2. `:focus-visible{` 前面不能是 `}` / `;`（那才是裸的），
+          Tailwind 转义类名前面是 `.focus-visible\\:`，形状对不上。*/
+  {
+    /* 1) 限定版必须存在 —— 被Tailwind 剥掉作用域就是这条要抓的 */
+    ok(
+      'focus-visible 有 .cl-root 作用域',
+      /\.cl-root\s+:focus-visible\s*\{/.test(css),
+      '产物里找不到 .cl-root :focus-visible —— 前缀被剥掉了？'
+    )
+    ok(
+      'prefers-reduced-motion 有 .cl-root 作用域',
+      /\.cl-root\s+\*/.test(css),
+      '产物里找不到 .cl-root * —— 前缀被剥掉了？'
+    )
+
+    /* 2) 裸版必须不存在。
+       `}` / `;` 之后紧跟选择器 = 那条规则的第一条选择器是它 = 裸。 */
+    ok(
+      '没有未限定的裸 :focus-visible',
+      !/(^|[;}])\s*:focus-visible\s*\{/.test(css),
+      '裸 :focus-visible 会给用户所有可聚焦元素套描边'
+    )
+    ok(
+      '没有未限定的裸 * 规则',
+      !/(^|[;}])\s*\*\s*(,\s*\*::(before|after)\s*)?\{/.test(css),
+      '裸 * 会影响用户整个 vault 的所有元素'
+    )
+  }
 }
 
 /* ---------- 输出 ---------- */

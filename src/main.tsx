@@ -108,15 +108,14 @@ export default class ClarityLedgerPlugin extends Plugin {
       void this.activate()
     })
 
+    // 失焦立刻落盘 —— 别让250ms 防抖窗口变成丢数据的窗口
+    this.flushOnBlur()
+
     this.addCommand({
       id: 'open-today',
       name: '打开今天的规划',
       callback: () => {
-        void this.activate()
-        const s = useStore.getState()
-        void useStore.getState().setCur(dkeyOf(new Date()))
-        void this.openTodayNote()
-        void s
+        void this.openToday()
       },
     })
 
@@ -171,20 +170,94 @@ export default class ClarityLedgerPlugin extends Plugin {
   }
 
   private async openTodayNote(): Promise<void> {
+    /* 用 store 里的 cur，不是 dkeyOf(new Date())。
+       这条命令的语义是「打开**当前选中那天**的日记」——
+       用户在视图里选了 10 月 5 日再点命令面板，期望是打开 10 月 5 日，
+       而不是跳回今天。cur 已经被openToday() 切好了。*/
     const cur = useStore.getState().cur
     const store = new VaultStore(this.app, this.settings)
     const file = this.app.vault.getAbstractFileByPath(store.pathOf(cur))
     if (file) {
       await this.app.workspace.getLeaf('tab').openFile(file as never)
     } else {
-      new Notice(`今天的日记还没建：${store.pathOf(cur)}`)
+      new Notice(`这一天的日记还没建：${store.pathOf(cur)}`)
     }
   }
 
+  /**
+   * 「打开今天的规划」命令 = 激活视图 + 切到今天 + 打开今天的日记。
+   *
+   * ## 为什么不能把这三件事拆开各自 `void` 掉
+   *
+   * 早先的写法是三句并发：
+   *
+   * ```ts
+   * void this.activate()          // 异步（会等 workspace）
+   * useStore.getState().setCur(今天)  // 同步
+   * void this.openTodayNote()     // 读useStore.getState().cur
+   * ```
+   *
+   * 竞态在这：**视图还没 onOpen 完，`setCur` 写的 `cur` 可能被随后的
+   * `store.load()` 整个覆盖**（onOpen 里 `useStore.setState({ db, ready: true })`
+   * 之后如果 `cur` 不是今天的值就晚了）。表现是「点了命令，视图打开了，
+   * 但停在昨天」。
+   *
+   * 现在顺序执行，并且**等视图 ready 再切日期** ——
+   * 上面那处setState 一定会先跑完。
+   */
+  private async openToday(): Promise<void> {
+    await this.activate()
+    /*切到今天 + 让月历翻到本月。
+      **必须等 activate() 完成** —— 视图这次才刚onOpen，
+      里面那次 `useStore.setState({ db, ready: true })` 会覆盖 cur。
+      顺序执行才不会有「停在昨天」这个竞态。 */
+    useStore.getState().setCur(dkeyOf(new Date()))
+    useStore.getState().setCalMonth(new Date())
+    await this.openTodayNote()
+  }
+
   onunload(): void {
-    // 同步接口，等不到异步写。视图的 onClose 里已经 flush 过了，
-    // 这里只是兜底 —— 插件被禁用时视图可能没走 onClose
+    /* Obsidian 给的是**同步接口**，这里等不到异步的 vault.modify —— 
+       `void flushNow()` 只是「发起一次写」，进程可能先走。
+       视图的 onClose 里有真正的 await flushNow()，那条路是可靠的；
+       但**禁用插件时视图可能不走 onClose**，所以这里是兜底，不指望它一定成。
+
+       真正兜住丢数据的是 onload 里挂的那个 blur 监听 —— 见 flushOnBlur。*/
     void flushNow()
+  }
+
+  /**
+   * 窗口失焦 / 隐藏时立刻落盘。
+   *
+   * ## 为什么必须挂这个
+   *
+   * 写入是 250ms 防抖的。这250ms 里如果用户直接关掉 Obsidian
+   * （Alt+F4、任务管理器、笔记本合盖、断电），**最后一次编辑就没了** ——
+   * 而且丢得毫无痕迹：界面上的块还在，重开就没了。
+   *
+   * `onunload` 救不了这个 —— 它是同步接口，`vault.modify` 是异步的，
+   * Obsidian 不会等。所以拦在**失焦**这一层：
+   *
+   * - 切到别的程序 → 触发失焦 → 立刻写
+   * - 关窗口 → 触发 blur/visibilitychange → 立刻写
+   * - 合盖 → 触发 visibilitychange → 立刻写
+   *
+   * 也就是说「用户离开这个插件」这个动作被我们截住了，
+   * 而不是指望退出流程能等我们。
+   *
+   * 注册走 `this.registerDomEvent` —— 插件卸载时 Obsidian 会自动解绑，
+   * 不用自己记得移除（自己的 removeEventListener 容易漏）。
+   */
+  private flushOnBlur(): void {
+    const flush = () => {
+      void flushNow()
+    }
+    this.registerDomEvent(window, 'blur', flush)
+    /* 移动端 / 部分平台不派发 window blur，但派发 visibilitychange。
+       两个都挂：谁先来算谁，flush 本身幂等（没脏数据直接返回）。*/
+    this.registerDomEvent(document, 'visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush()
+    })
   }
 }
 

@@ -152,6 +152,40 @@ export const MUTATIONS = [
     to: '\n    }',
     expectRed: ['目标已有同一天'],
   },
+
+  /* ---------- 全局样式污染 ----------
+     这两条要抓的是「注入用户整个 vault」的行为。
+     社区目录的 reviewer 会盯这一类，而它们一旦回归是**静默的**：
+     插件不报错、功能不坏，只是用户觉得「装了之后界面变了」。
+     所以变异也必须有 —— 否则断言可能又变成永远绿的那种。
+
+     变异改的是 `src/index.css`（源码侧断言在 `src/config/alias.test.ts`），
+     expectRed 里的名字要与那里的 it() 描述对得上。*/
+  {
+    name: 'focus-visible 退回裸选择器（给用户整个 vault 套玫红描边）',
+    file: 'src/index.css',
+    from: /\.cl-root :focus-visible \{/,
+    to: ':focus-visible {',
+    expectRed: ['focus-visible 限定在 .cl-root 内'],
+  },
+  {
+    name: 'prefers-reduced-motion 退回裸 * （压掉用户所有插件的动效）',
+    file: 'src/index.css',
+    from: /  \.cl-root \*,\n  \.cl-root \*::before,\n  \.cl-root \*::after \{/,
+    to: '  *,\n  *::before,\n  *::after {',
+    expectRed: ['prefers-reduced-motion 限定在 .cl-root 内'],
+  },
+  {
+    /* 第二层事故：前缀写对了，但**留在 @layer 里** ——
+       Tailwind v4 处理 layer 时重写选择器，产物里前缀被剥掉，
+       源侧断言全绿、用户那边照样被污染。
+       这条变异模拟的就是「以为改好了，其实在 layer 里」。*/
+    name: 'focus-visible 的作用域规则挪进 @layer（Tailwind 会剥掉前缀，源侧看着还对）',
+    file: 'src/index.css',
+    from: /\.cl-root :focus-visible \{\n  outline: 2px solid var\(--color-ink\);\n  outline-offset: 2px;\n\}/,
+    to: '@layer base {\n.cl-root :focus-visible {\n  outline: 2px solid var(--color-ink);\n  outline-offset: 2px;\n}',
+    expectRed: ['留在 @layer 之外'],
+  },
 ]
 
 /** 改文件，返回 { changed } —— changed=false 表示变异没生效（没匹配上） */

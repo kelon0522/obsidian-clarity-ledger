@@ -3,8 +3,16 @@
 《认知觉醒》工字格笔记法的 Obsidian 实现。每天一个 Markdown 文件，
 待办、计划、实际三栏联动 —— **数据存在你的 vault 里**，能被全文搜索、能 git、能跟着同步走。
 
-<!--上架前需要补两张图：icon.png（社区列表的图标，100x100 PNG）
-     和 screenshot.png（README 顶部的界面截图，16:9 宽一些）。 -->
+![界面截图](screenshot.png)
+
+**桌面端插件，手机装不了。** 手机上直接读 vault 里的 Markdown 就够了，
+Obsidian 原生就能渲染那个表格。详见[桌面端 / 移动端](#桌面端--移动端)。
+
+> English summary: A daily planner for Obsidian based on the "T-shaped notes"
+> method from *Cognitive Awakening*. Todos are the master table; the plan and
+> actual tracks are two projections of it. Everything is stored as plain
+> Markdown in your vault — searchable, git-friendly, and synced by whatever
+> sync setup you already use. Desktop only.
 
 ## 为什么数据是 Markdown 而不是数据库
 
@@ -50,17 +58,20 @@
 
 ## 安装
 
-### 社区插件（推荐）
+### 手动安装（当前可用）
 
-设置 → 第三方插件 → 浏览，搜 `Clarity Ledger`。
-
-### 手动安装
-
-从 [Releases](https://github.com/kelon/obsidian-clarity-ledger/releases) 下载最新版里的
-`main.js`、`manifest.json`、`styles.css`，放进
-`<你的 vault>/.obsidian/plugins/clarity-ledger/`，重启 Obsidian 后启用。
+1. 从 [Releases](https://github.com/kelon/obsidian-clarity-ledger/releases) 下载最新版里的
+   `main.js`、`manifest.json`、`styles.css` 三个文件
+2. 放进 `<你的 vault>/.obsidian/plugins/clarity-ledger/`（没有就自己建这个目录）
+3. 重启 Obsidian，设置 → 第三方插件 → 关闭安全模式 → 启用 **Clarity Ledger**
+4. 点左侧栏的日历图标，或者按 `Ctrl+P` 搜「打开今天的规划」
 
 首次启用会提示创建今天的文件。
+
+### 社区插件
+
+提交社区目录审核通过后，这里会变成「设置 → 第三方插件 → 浏览，搜 `Clarity Ledger`」。
+在那之前请用上面的手动安装。
 
 ## 改存储位置 / 文件名
 
@@ -89,7 +100,8 @@
 触屏不触发 `dragstart`；而且时间轴整轴 960px，手机屏幕放不下。
 
 移动端的用法是**直接读 vault 里的 Markdown** —— Obsidian 原生就能渲染那个表格，
-查阅、改复盘、补实际时间都可以，不需要插件。数据本来就跟着同步走。
+查阅、改复盘、补实际时间都可以，不需要插件。数据本来就跟着同步走，
+所以手机上看到的和电脑上完全一致。
 
 插件版是主要方向，Web 版在另一个仓库维护，两边产品规则一致。
 
@@ -103,11 +115,15 @@
 ```bash
 npm install
 npm run build       # 产出 main.js + styles.css，并自检
-npm test            # 150 个用例
-npm run mutation    # 变异测试：注入 9 个错误，确认断言还活着
+npm test            # 202 个用例
+npm run mutation    # 变异测试：注入 15 个错误，确认断言还活着
 ```
 
-开发时建议装[Hot-Reload 插件](https://github.com/pjeby/hot-reload)，`Ctrl+R` 重新加载。
+`npm test` / `npm run mutation` 都是**跨平台**的：走 node 驱动，没装 Git Bash 的
+Windows 机器也能跑（早先版本直接依赖 bash，等于把 Windows 贡献者挡在门外）。
+
+想改代码的话看 [CONTRIBUTING.md](CONTRIBUTING.md)，里面讲了这个项目的代码约定。
+开发时建议装 [Hot-Reload 插件](https://github.com/pjeby/hot-reload)，`Ctrl+R` 重新加载。
 
 构建产物自检会**真的 `require` 一遍 main.js** ——「esbuild 退出码 0」不等于
 「Obsidian 能加载」，引用错、循环依赖、CJS 包装坏了都要 require 一次才暴露。
@@ -127,8 +143,14 @@ git push --tags       # 触发 .github/workflows/release.yml，自动建 Release
 ```
 
 Release 附件是 `main.js` + `manifest.json` + `styles.css` 三个文件。
-**tag 必须严格等于 manifest 的 `version` 且不带 `v` 前缀** ——
-Obsidian 按 version 找同名 tag，带 `v` 匹配不上，用户装不到更新。
+
+三条踩过一次的规则：
+
+- **tag 必须严格等于 manifest 的 `version` 且不带 `v` 前缀** ——
+  Obsidian 按 version 找同名 tag，带 `v` 匹配不上，用户装不到更新。
+- **Release 不能是 draft** —— Obsidian 通过 API 取**已发布**的 Release 附件，
+  draft 对外不可见。流水线里已经写死 `draft: false`。
+- **`package-lock.json` 必须提交** —— 流水线用 `npm ci`，没有 lock 直接失败。
 
 上架到社区目录只需提交一次，之后的版本更新不用再提 PR。
 
@@ -137,3 +159,11 @@ Obsidian 按 version 找同名 tag，带 `v` 匹配不上，用户装不到更�
 MIT，见 [LICENSE](LICENSE)。
 
 方法论出处：《认知觉醒》周岭。
+
+## 相关文件
+
+| 文件 | 干什么用 |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | 用户能感知到的变化 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 怎么参与开发、这个项目的代码约定 |
+| [手测清单.md](手测清单.md) | 真机手动验证清单（35 项），改核心逻辑后过一遍 |

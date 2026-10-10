@@ -25,7 +25,15 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
+      # **测试必须跑在发版之前。**
+      # 构建成功 ≠ 逻辑对：这个项目的 200 条用例管的是拖拽落位、迁移不覆盖、
+      # 编解码往返这些「错了但不会报错」的地方 —— 它们坏了用户看到的是
+      # 「计划时间自己变了」，没有任何报错可查。
+      # 发出去再想修，只能等下一个版本。
+      - name: Test
+        run: npm test
+
+      - name: Typecheck + Build
         run: npm run build
 
       # 产物自检：真的 require 一遍 main.js、检查样式齐备。
@@ -37,9 +45,17 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          # **必须是 false，不能是 draft。**
+          # Obsidian 通过 GitHub API 按 version 找**已发布**的 Release 取附件；
+          # draft 状态的 Release 对外不可见 → 用户「装了更新装不上」，
+          # 而且社区列表里点进去也是404。
+          # 想先看内容再发，就手动把 draft 勾掉 —— 别让流水线默认出 draft。
+          draft: false
+          prerelease: false
           files: |
             main.js
             manifest.json
             styles.css
-          #附件必须逐个列出。塞在 source.zip 里 Obsidian 读不到。
+          # 附件必须**逐个列出**。塞在 source.zip 里 Obsidian 读不到。
+          # icon.png / screenshot.png 不在这里 —— 社区列表的图标取自
+          # raw.githubusercontent 上的仓库根目录那份，跟 Release 附件无关。

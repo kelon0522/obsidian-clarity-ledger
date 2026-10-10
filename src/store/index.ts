@@ -52,6 +52,8 @@ interface State {
 
 interface Actions {
   setCur(k: string): void
+  /** 月历直接跳到某个月（命令面板「打开今天」用）。翻月请用 prev/nextMonth */
+  setCalMonth(d: Date): void
   prevMonth(): void
   nextMonth(): void
   notify(msg: string, undoable?: boolean): void
@@ -181,6 +183,11 @@ export const useStore = create<Store>((set, get) => ({
   undo: null,
 
   setCur: (k) => set({ cur: k }),
+  /* 存一份新的 Date 对象，不能存引用 ——
+     nextMonth/prevMonth 是 `new Date(s.calMonth)` 造新对象的，
+     存引用不会有问题；但调用方如果传进来一个会继续被改的 Date，
+     月历就跟着一起变。copy 一份最省心。 */
+  setCalMonth: (d) => set({ calMonth: new Date(d) }),
   prevMonth: () =>
     set((s) => {
       const d = new Date(s.calMonth)

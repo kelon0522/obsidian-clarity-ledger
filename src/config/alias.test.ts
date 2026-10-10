@@ -752,3 +752,98 @@ describe('确认弹框的答复顺序', () => {
     expect(m).toContain('text-error')
   })
 })
+
+/* ==================================================================
+ * styles.css 的作用域隔离
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * **styles.css 是整个 vault 全局加载的** —— 用户的日记、主题、
+ * 别的插件全都吃这份 CSS。所以插件里任何裸的全局选择器都会溢出到
+ * 别人的界面上，而且**它是静默的**：插件不报错、功能不坏，
+ * 只是用户觉得「装了之后界面变了」。
+ *
+ * 两条真实的翻车记录：
+ * - `prefers-reduced-motion` 里写的是裸 `*` → 用户给整个 Obsidian 设了
+ *   「减少动效」之后，装了这个插件，**所有界面**（包括别的插件）的动效
+ *   都被压到 0.01ms。
+ * - 裸 `:focus-visible` → 键盘 Tab 一下，vault 里所有可聚焦元素都套玫红描边。
+ *
+ * 社区目录的 reviewer 会盯这一类注入全局样式的行为。
+ *
+ * ## 为什么源侧和产物侧都要断言
+ *
+ * - **这里（源码）**：抓「有人把 `.cl-root` 前缀删了」
+ * - `scripts/verify-build.mjs`（产物）：抓「Tailwind 在构建时把前缀剥掉了」
+ *
+ * 后者真实发生过：先把 `.cl-root :focus-visible` 写对了，但**留在
+ * `@layer base` 里** —— Tailwind v4 处理 layer 时会重写选择器，
+ * 产物里前缀没了，又变回裸的。源码看着对，用户那边照样受影响。
+ *
+ * 与「日历隔离层必须在 @layer 外」是同一个病：**隔离层放进 layer 等于没写。**
+ */
+describe('全局样式不污染用户 vault', () => {
+  const css = () => stripComments(read('src/index.css'))
+
+  it('prefers-reduced-motion 限定在 .cl-root 内', () => {
+    const c = css()
+
+    /* 限定版必须存在 */
+    expect(c).toMatch(/\.cl-root\s+\*/)
+
+    /* 裸版必须不存在 —— `}` / `;` 之后紧跟 `*` 就是裸规则的第一条选择器。
+       不能简单扫 `* {`：`background-image` 里那些合法用法会被误报。 */
+    const bare = c.match(/(^|[;}])\s*\*\s*(,\s*\*::(before|after)\s*)?\{/g)
+    expect(bare ?? []).toHaveLength(0)
+  })
+
+  it('focus-visible 限定在 .cl-root 内', () => {
+    const c = css()
+
+    expect(c).toMatch(/\.cl-root\s+:focus-visible\s*\{/)
+
+    /* Tailwind 转义类名（.focus-visible\\:opacity-100:focus-visible）
+       前面是 `.` 而不是 `}`，形状对不上，不会误报。 */
+    const bare = c.match(/(^|[;}])\s*:focus-visible\s*\{/g)
+    expect(bare ?? []).toHaveLength(0)
+  })
+
+  /* 这两条是「只加前缀还不够」的守门人。
+     见上面注释里的真实事故：前缀写对了但留在 @layer base 里，
+     Tailwind 构建时把它剥掉 —— 源侧断言全绿，用户那边照样被污染。
+
+     **必须剥掉注释再判断位置** —— 规则上面的注释里会写
+     「layer 内会被剥掉」这类说明，字面量里有 `@layer`，
+     直接在原文里找位置会被注释里的字样带偏。
+     （这正是本文件 stripComments 的存在理由：断言「某东西不该出现」
+     时，全文扫必然被解释它的注释误报。）*/
+  it('focus-visible 的作用域规则留在 @layer 之外（layer 内会被 Tailwind 剥掉前缀）', () => {
+    expectOutsideLayer('.cl-root :focus-visible')
+  })
+
+  it('prefers-reduced-motion 也在 @layer 之外（同样会被 Tailwind 剥掉）', () => {
+    expectOutsideLayer('prefers-reduced-motion')
+  })
+
+  /**
+   * 断言某条规则不在任何 `@layer ... {` 块内部。
+   *
+   * 判据：从文件开头到该规则位置，**最后一个动作**是 `}`（关掉某个块）
+   * 而不是 `@layer`（开一个新层）。剥过注释，不会被注释里的字样带偏。
+   *
+   * @param needle 规则里那段唯一的标记
+   */
+  function expectOutsideLayer(needle: string) {
+    const c = stripComments(read('src/index.css'))
+    const start = c.indexOf(needle)
+    expect(start).toBeGreaterThan(-1)
+
+    const before = c.slice(0, start)
+    const lastLayerOpen = before.lastIndexOf('@layer')
+    const lastClose = before.lastIndexOf('}')
+
+    /* layer 开得比关得晚 ⇒ 规则在某个 @layer 块内（危险位置） */
+    expect(lastClose).toBeGreaterThan(lastLayerOpen)
+  }
+})
