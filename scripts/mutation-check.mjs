@@ -5,7 +5,7 @@
  *
  * **「测试全绿」不等于「测试有效」。**
  * fixture 里两个本该不同的值设成相同、断言落在表象而非根因上、
- * 或者断言用的工具本身有bug —— 都会导致「跑通了」但 bug 抓不到。
+ * 或者断言用的工具本身有 bug —— 都会导致「跑通了」但 bug 抓不到。
  * 本项目栽过两次：CSS 的花括号深度断言因为剥离注释的方式有误，
  * 在**被截断的代码**上算出了正确结论，断言"通过"了两轮才发现。
  *
@@ -14,12 +14,17 @@
  * ## 为什么不在 node 里 spawn vitest
  *
  * **这个环境里从 node spawn 子进程拿不到 stdout/stderr**
- * （`spawnSync` 返回 `status: null`，即被信号杀掉，一个字节都收不到）。
- * 而从 shell 直接跑 `npx vitest run` 完全正常。
- * 所以这里不自己 spawn —— 由外层 shell 负责跑测试并重定向，
- * 本脚本只负责「改文件 → 调外部 runner → 解析结果 → 还原文件」。
+ *（`spawnSync` 返回 `status: null`，即被信号杀掉，一个字节都收不到）。
+ * 而从 shell 直接跑 `npx vitest run > log 2>&1` 完全正常。
+ * 所以由 `mutation.sh` 负责「跑测试 + 重定向」，本模块只做
+ * **改文件 → 读日志 → 用 git 还原 → 判断**。
  *
- * 用法见 README 或 `npm run mutation`。
+ * 文件还原走 `git checkout` —— 之前用「备份到 .mutation-bak.json」的方式，
+ * 一旦某个变异没 collect 成功，下一个 apply 会把备份覆盖掉，
+ * **污染会留在工作区**。实测就是这样把 vault.ts 和 index.css 改坏了两轮。
+ * git 基线让还原变得无条件可靠。
+ *
+ * 用法：`npm run mutation`
  */
 
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
