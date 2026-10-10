@@ -672,3 +672,83 @@ describe('存储位置可配置（不硬编码）', () => {
     expect(m.isDesktopOnly).toBe(true)
   })
 })
+
+/**
+ * 迁移确认弹框 —— **存在性与顺序**。
+ *
+ * 「立即写入 vault」「恢复默认路径」两个按钮已删（2026-10-10）。
+ * 删按钮不等于解决危险：手动改文本框同样会搬文件，
+ * 所以确认挂在 `commitLocation`（提交层）而不是某个入口上。
+ */
+describe('迁移确认（破坏性操作）', () => {
+  const code = () => stripComments(readFileSync(join(here, 'src', 'config', 'SettingsTab.ts'), 'utf8'))
+
+  it('两个按钮已删（一个与命令面板重复且会撒谎，一个语义是撤销行为是搬文件）', () => {
+    const c = code()
+    expect(c).not.toContain('恢复默认路径')
+    /* 「立即写入 vault」在命令面板里还有一条，所以这里只查设置面板 */
+    expect(c).not.toContain("setButtonText('立即写入 vault')")
+    // 「维护」这一节整个没了
+    expect(c).not.toContain("setName('维护')")
+  })
+
+  it('命令面板仍保留「立即写入 vault」（功能没删，只换了入口）', () => {
+    const src = readFileSync(join(here, 'src', 'main.tsx'), 'utf8')
+    expect(src).toContain('立即写入 vault')
+  })
+
+  it('确认挂在提交层（commitLocation），不是挂在某个入口', () => {
+    const c = code()
+    const i = c.indexOf('private async commitLocation(')
+    expect(i).toBeGreaterThan(-1)
+    /* 确认必须在 apply 之前 —— 之后文件已经搬完了 */
+    const seg = c.slice(i, c.indexOf('\n  private ', i + 10))
+    expect(seg).toContain('confirmMigration')
+    expect(seg.indexOf('confirmMigration')).toBeLessThan(seg.indexOf('this.apply('))
+  })
+
+  it('用户取消时输入框要还原（不留下没生效的字）', () => {
+    const c = code()
+    const i = c.indexOf('private async commitLocation(')
+    const seg = c.slice(i, c.indexOf('\n  private ', i + 10))
+    expect(seg).toMatch(/if \(!\(await this\.confirmMigration\(next\)\)\)/)
+    // 取消分支里要有 display() 把输入框刷回实际生效的值
+    expect(seg.slice(seg.indexOf('confirmMigration'))).toContain('this.display()')
+  })
+})
+
+/**
+ * ConfirmModal 的答复顺序。
+ *
+ * **这个 bug 的形态最坏：点「确定」等于点「取消」，而界面上看不出任何异常** ——
+ * 设置没变、没报错、Notice 也没弹。用户只会觉得「这插件有毛病」。
+ */
+describe('确认弹框的答复顺序', () => {
+  const modal = () =>
+    stripComments(readFileSync(join(here, 'src', 'config', 'ConfirmModal.ts'), 'utf8'))
+
+  it('settle 必须在 close 之前（否则 close → onClose 会先答复 false）', () => {
+    const m = modal()
+    const i = m.indexOf('setButtonText(this.summary.cta)')
+    expect(i).toBeGreaterThan(-1)
+    const seg = m.slice(i, i + 200)
+    expect(seg).toContain('settle(true)')
+    expect(seg.indexOf('settle(true)')).toBeLessThan(seg.indexOf('this.close()'))
+  })
+
+  it('有 settled 标记（close 和 onClose 会两次调答复）', () => {
+    const m = modal()
+    expect(m).toContain('settled')
+    expect(m).toMatch(/if \(this\.settled\) return/)
+  })
+
+  it('Esc / 点外面关闭也要答复（否则 Promise 永远挂着）', () => {
+    const m = modal()
+    expect(m).toMatch(/onClose\(\)[\s\S]{0,300}settle\(false\)/)
+  })
+
+  it('警告行（⚠）单独标红，不淹没在普通说明里', () => {
+    const m = modal()
+    expect(m).toContain('text-error')
+  })
+})

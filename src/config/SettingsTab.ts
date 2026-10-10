@@ -28,8 +28,10 @@ import type ClarityLedgerPlugin from '@/main'
 import { DEFAULT_SETTINGS, validateSettings } from '@/config/settings'
 import type { PluginSettings } from '@/config/settings'
 import { VaultStore } from '@/md/vault'
-import { describeOutcome } from '@/md/migrate'
-import type { MigrationOutcome } from '@/md/migrate'
+import { describeOutcome, planMigration } from '@/md/migrate'
+import type { FileRef, MigrationOutcome } from '@/md/migrate'
+import { migrationSummary, pathHint } from '@/md/confirm'
+import { ConfirmModal } from '@/config/ConfirmModal'
 import { flushNow } from '@/store'
 import { VIEW_TYPE } from '@/main'
 
@@ -114,28 +116,14 @@ export class LedgerSettingTab extends PluginSettingTab {
         }),
       )
 
-    /* ---------- 手动操作 ---------- */
-    const tools = new Setting(containerEl).setName('维护')
-    tools.addButton((b) =>
-      b
-        .setButtonText('立即写入 vault')
-        .setCta()
-        .onClick(async () => {
-          await flushNow()
-          new Notice('已写入')
-        }),
-    )
-    tools.addButton((b) =>
-      b.setButtonText('恢复默认路径').onClick(async () => {
-        if (cfg.folder === DEFAULT_SETTINGS.folder && cfg.nameTemplate === DEFAULT_SETTINGS.nameTemplate) {
-          new Notice('已经是默认了')
-          return
-        }
-        await this.commitLocation(DEFAULT_SETTINGS.folder, 'folder', cfg)
-        await this.commitLocation(DEFAULT_SETTINGS.nameTemplate, 'nameTemplate', cfg)
-        this.display()
-      }),
-    )
+    /* 「立即写入 vault」与「恢复默认路径」两个按钮已删（2026-10-10）。
+       - 前者与命令面板的同名命令重复，而且会在没东西可写时撒谎说「已写入」
+       - 后者语义是「撤销」、行为是「搬文件」，不配确认就不该暴露入口
+         （手动改文本框同样是搬文件，所以危险路径本来就没消失，
+          真正的修法是给迁移加确认 —— 见 commitLocation）
+
+       写入本身是 250ms 防抖自动的，关视图和卸载时也会 flush。
+       真需要立刻落盘：Ctrl+P 搜「立即写入 vault」。 */
   }
 
   /**
@@ -229,8 +217,50 @@ export class LedgerSettingTab extends PluginSettingTab {
       return
     }
 
+    /* 迁移是破坏性操作 —— 搬的是用户的数据。
+       **确认必须在这里，而不只是「有个恢复默认的按钮时才要」。**
+       手动改文本框和点「恢复默认路径」走的是同一条路，
+       所以确认要挂在「提交」这一层，不挂在某个入口上。*/
+    if (!(await this.confirmMigration(next))) {
+      this.display() // 还原输入框
+      return
+    }
+
     await this.apply(next, true)
     this.display()
+  }
+
+  /**
+   * 弹框确认。
+   *
+   * **文案必须说清三件事**：有多少文件会被搬走、旧目录会不会留下东西、
+   * 有没有跳过的（跳过 = 那部分数据迁移后界面上看不到）。
+   * 措辞含糊的代价是「用户以为只改了设置」，而文件已经被搬走了。
+   *
+   * @returns 用户点了确定才继续
+   */
+  private async confirmMigration(next: PluginSettings): Promise<boolean> {
+    const prev = this.plugin.settings
+    const all: FileRef[] = this.app.vault.getMarkdownFiles().map((f) => ({
+      path: f.path,
+      basename: f.basename,
+    }))
+    const plan = planMigration(all, prev, next)
+    const summary = migrationSummary(
+      plan,
+      pathHint(prev.folder, prev.nameTemplate),
+      pathHint(next.folder, next.nameTemplate),
+    )
+
+    // 压根没文件要搬 → 不拦，但要解释「为什么没有」
+    if (!plan.items.some((i) => i.kind !== 'same')) {
+      new Notice('没有需要迁移的文件，位置已改')
+      return true
+    }
+
+    return new Promise<boolean>((resolve) => {
+      new ConfirmModal(this.app, summary, resolve).open()
+    })
   }
 
   /**
