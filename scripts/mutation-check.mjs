@@ -124,7 +124,8 @@ export const MUTATIONS = [
     file: 'src/md/migrate.ts',
     string: "  if (!path.startsWith(f + '/')) return false\n  const rest = path.slice(f.length + 1)\n  return !rest.includes('/')",
     stringTo: "  return path.startsWith(f + '/')",
-    expectRed: ['子目录'],
+    // 前缀匹配会让子目录里的文件也进迁移表，两条断言都该红
+    expectRed: ['旧目录里不是清晰力数据', 'basename 取最后一段'],
   },
   {
     name: '迁移：不检查目标是否被占就执行（同一天的两份数据会被覆盖）',

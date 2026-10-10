@@ -62,7 +62,7 @@ for i in $(seq 0 $((COUNT - 1))); do
   RC=$?
   if [ $RC -ne 0 ]; then
     echo "✗ $NAME"
-    if echo "$ERR" | grep -q "正则没匹配上"; then
+    if echo "$ERR" | grep -q "这个变异是假的"; then
       echo "    变异没生效 —— 匹配不上，这个变异从未被验证过"
       NOTES="$NOTES\n  - $NAME （变异是假的，从未被验证过）"
     else
