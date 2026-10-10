@@ -47,6 +47,11 @@ const K = (() => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 })()
 
+/** 去掉注释，只留代码 —— 断言「某字符串不该出现」时必须用。 */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+}
+
 async function setup(state: Record<string, unknown>) {
   const { useStore, bindVault } = await import('@/store')
   const { VaultStore } = await import('@/md/vault')
@@ -112,7 +117,9 @@ describe('LedgerView 真机冒烟', () => {
     const host = await setup({ db: {} })
     expect(host.textContent).toContain('待办事项')
   })
-})  /**
+})
+
+  /**
    * DndContext 必须存在，否则待办拖不动且**什么都不报**。
    *
    * 实测：无 DndContext 时 `useSortable` 返回的 `listeners` 是**空对象**，
@@ -136,5 +143,67 @@ describe('LedgerView 真机冒烟', () => {
     expect(src).toContain('<DndContext')
     expect(src).toContain('</DndContext>')
   })
+/**
+ * 轨道高度自适应的**结构性断言**。
+ *
+ * 主理人报的原始问题：窗口一矮，「每日回顾」就被挤出视口 ——
+ * 而回顾区是每天必填的东西，被遮挡等于功能不可用。
+ *
+ * 这些断言守的是「别再退回写死的值」。
+ * 早先 `style={{ height: 560 }}` + `min-h-screen` 两处一起把布局钉死了，
+ * 而且它们**静默失效** —— 不报错、测试全绿，只是回顾区不见了。
+ */
+describe('每日回顾不被遮挡（布局结构）', () => {
+  const viewCode = () =>
+    stripComments(readFileSync(join(here, 'src', 'view', 'LedgerView.tsx'), 'utf8'))
 
+  it('外层用 h-screen + flex col + overflow-hidden（让内部能分配高度）', () => {
+    const c = viewCode()
+    expect(c).toContain('cl-root flex h-screen flex-col overflow-hidden')
+    /* **不能再用 min-h-screen** —— 那样整页跟着内容变高，
+       轨道拿不到「剩余空间」，自适应无从谈起。 */
+    expect(c).not.toContain('min-h-screen')
+  })
 
+  it('轨道容器不再是写死的 560', () => {
+    const c = viewCode()
+    expect(c).not.toMatch(/height:\s*560/)
+    expect(c).toContain('style={{ height: trackH }}')
+  })
+
+  it('轨道高度真的调了 trackHeight，且跟着视口变化重算', () => {
+    const c = viewCode()
+    expect(c).toContain('trackHeight(')
+    expect(c).toContain('ResizeObserver')
+    expect(c).toContain("window.addEventListener('resize'")
+  })
+
+  it('每日回顾那一段是 flex-none（不被压缩掉）', () => {
+    const c = viewCode()
+    /* 回顾区必须 flex-none 且不给 min-h-0 ——
+       flex 子项默认 min-height:auto，内容比容器高时会撑破而不是让位。 */
+    const i = c.indexOf('备注 / 每日回顾')
+    expect(i).toBeGreaterThan(-1)
+    expect(c.slice(Math.max(0, i - 400), i)).toContain('flex-none')
+  })
+
+  it('Sheet 有 flex flex-col + min-h-0（否则内部的 flex-none 无效）', () => {
+    const ui = stripComments(readFileSync(join(here, 'src', 'ui', 'index.tsx'), 'utf8')).slice(0, 1200)
+    expect(ui).toContain('flex flex-col')
+    /* min-h-0 同样必需 —— flex 子项默认 min-height:auto，
+       内容比容器高时撑破容器，轨道高度就算错了。 */
+    expect(ui).toContain('min-h-0')
+  })
+
+  it('滚动到「现在」的偏移从实测高度算，不是写死的 240', () => {
+    const src = stripComments(readFileSync(join(here, 'src', 'components', 'TimeGutter.tsx'), 'utf8'))
+    expect(src).not.toMatch(/yT\(m\)\s*-\s*240/)
+    expect(src).toContain('clientHeight')
+  })
+
+  it('轨道上下限是导出的常量（数值验算在 track-height.test.ts）', () => {
+    const src = readFileSync(join(here, 'src', 'components', 'TimeGutter.tsx'), 'utf8')
+    expect(src).toContain('export const TRACK_MIN')
+    expect(src).toContain('export const TRACK_MAX')
+  })
+})

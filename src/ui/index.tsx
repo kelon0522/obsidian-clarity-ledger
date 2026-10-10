@@ -18,9 +18,20 @@ export function Hw({
   )
 }
 
+/**
+ * 纸面容器。
+ *
+ * **`flex flex-col` 是必需的，不是装饰** ——
+ * 内部的轨道区用 `flex-none` + 显式高度（随视口自适应），
+ * 每日回顾用 `flex-none` 按内容撑开。缺了 flex-col，
+ * 这两个子元素的 flex 属性完全不生效，轨道高度就没法算。
+ *
+ * `min-h-0` 是另一个必需项：flex 子项默认 `min-height: auto`，
+ * 内容比容器高时会撑破容器而不是被压缩 —— 那样轨道的高度计算就失真了。
+ */
 export function Sheet({ children }: { children: ReactNode }) {
   return (
-    <div className="flex-1 min-w-0 bg-paper border border-rule2 rounded-sm p-6 pb-7 pl-8 relative shadow-paper">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 bg-paper border border-rule2 rounded-sm p-6 pb-7 pl-8 relative shadow-paper">
       <div
         aria-hidden
         className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-sm bg-linear-to-b from-soft from-0 via-soft2 via-40 to-soft2 to-60 to-soft to-100"

@@ -33,5 +33,11 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     fileParallelism: false,
     singleFork: true,
+    /**
+     * jsdom 缺 `ResizeObserver`（轨道高度自适应要用它实测固定开销）。
+     * setupFiles 对**所有**测试文件生效，包括 `environment: 'node'` 的那些 ——
+     * 那个环境下没有 `window`，所以 stub 里每项都先判断存在性。
+     */
+    setupFiles: ['src/test-setup.ts'],
   },
 })
