@@ -117,7 +117,10 @@ export const MUTATIONS = [
   {
     name: '迁移：目录判断用前缀匹配（子目录里的文件会被误搬）',
     file: 'src/md/migrate.ts',
-    from: /return path\.startsWith\(f \+ '\/'\)\n  const rest = path\.slice\(f\.length \+ 1\)\n  return !rest\.includes\('\/'\)/,
+    // 去掉「必须是直接子项」那道检查，只留 startsWith ——
+    // 前缀写法会把子目录里的文件也当成旧目录的数据搬走，
+    // 而 listFiles 用同样的前缀判断读不到它们 → 静默搬走看不见的文件
+    from: /if \(!path\.startsWith\(f \+ '\/'\)\) return false\n  const rest = path\.slice\(f\.length \+ 1\)\n  return !rest\.includes\('\/'\)/,
     to: "return path.startsWith(f + '/')",
     expectRed: ['子目录'],
   },
