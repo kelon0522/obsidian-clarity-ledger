@@ -109,9 +109,11 @@ export const MUTATIONS = [
   {
     name: '轨道高度改回 JS 自反馈计算（回顾区被挤出视口、底部拖不到）',
     file: 'src/view/LedgerView.tsx',
-    string: '<div className="relative flex-1 min-h-0">',
-    stringTo: '<div className="relative flex-none" style={{ height: 520 }}>',
-    expectRed: ['轨道高度交给 CSS flex', '轨道上下限用 CSS 声明'],
+    // 只换 className 那一行 —— 标签是多行的，按整段匹配会失败。
+    // flex-1 + min-h-0 → flex-none + 写死高度，等于退回上一版的错
+    string: 'className="relative flex-1 min-h-0"',
+    stringTo: 'className="relative flex-none" data-cl-main',
+    expectRed: ['轨道高度交给 CSS flex', '不许用 ResizeObserver'],
   },
   {
     name: '样式配置改回 .ts（纯 ESM 的@tailwindcss/vite 加载失败）',
