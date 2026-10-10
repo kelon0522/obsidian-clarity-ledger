@@ -107,6 +107,13 @@ export const MUTATIONS = [
   },
 
   {
+    name: '轨道高度改回 JS 自反馈计算（回顾区被挤出视口、底部拖不到）',
+    file: 'src/view/LedgerView.tsx',
+    string: '<div className="relative flex-1 min-h-0">',
+    stringTo: '<div className="relative flex-none" style={{ height: 520 }}>',
+    expectRed: ['轨道高度交给 CSS flex', '轨道上下限用 CSS 声明'],
+  },
+  {
     name: '样式配置改回 .ts（纯 ESM 的@tailwindcss/vite 加载失败）',
     file: 'package.json',
     string: '"build:css": "vite build --config vite.css.config.mts',

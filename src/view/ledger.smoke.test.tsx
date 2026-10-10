@@ -143,19 +143,54 @@ describe('LedgerView 真机冒烟', () => {
     expect(src).toContain('<DndContext')
     expect(src).toContain('</DndContext>')
   })
+
 /**
- * 轨道高度自适应的**结构性断言**。
+ * 每日回顾不被遮挡 —— **布局结构的禁止性断言**。
  *
- * 主理人报的原始问题：窗口一矮，「每日回顾」就被挤出视口 ——
- * 而回顾区是每天必填的东西，被遮挡等于功能不可用。
+ * ## 这组断言经历过一次失败
  *
- * 这些断言守的是「别再退回写死的值」。
- * 早先 `style={{ height: 560 }}` + `min-h-screen` 两处一起把布局钉死了，
- * 而且它们**静默失效** —— 不报错、测试全绿，只是回顾区不见了。
+ * 上一版（用 JS 算高度）8 条断言全绿，而真机上回顾区被挤出视口、
+ * 轨道底部拖不到。原因不在断言写得不够多，而在**方向错了**：
+ *
+ *     轨道越高 → 主区 clientHeight 越小 → 算出的轨道越矮 → 反过来
+ *
+ * 主区自己就是 flex-1，而它的 clientHeight 正是用轨道高度算出来的。
+ * 那条 expect(...toContain("trackHeight(")) 甚至**主动要求了这个自反馈** ——
+ * 断言从守门变成了帮凶。
+ *
+ * ## 所以现在守的是「不许出现 JS 测量」
+ *
+ * 「自适应」的正确做法是 flex-1，剩余空间由布局引擎分配。
+ * 一旦自己动手算，就会出现「算出来的值反过来影响被测量的东西」。
+ *
+ * **这类 bug 的形态：不报错、测试全绿、真机坏掉。**
+ * 断言必须是禁止性的（不许有 ResizeObserver），
+ * 而不是存在性的（要调用 trackHeight）。
  */
 describe('每日回顾不被遮挡（布局结构）', () => {
   const viewCode = () =>
     stripComments(readFileSync(join(here, 'src', 'view', 'LedgerView.tsx'), 'utf8'))
+
+  it('轨道高度交给 CSS flex（flex-1 min-h-0），不用 JS 算', () => {
+    expect(viewCode()).toContain('relative flex-1 min-h-0')
+  })
+
+  /**
+   * **核心断言：不许自己测高度。**
+   *
+   * data-cl-main 那套「实测视口减主区高度」的自反馈就是这么来的。
+   * 这条断言的意义是：**下一个人想「优化」成 JS 精确计算时，
+   * 会先撞到它，然后读到上面那段注释。**
+   */
+  it('不许用 ResizeObserver / 事件监听自己测高度（自反馈会收敛到错值）', () => {
+    const c = viewCode()
+    expect(c).not.toContain('ResizeObserver')
+    expect(c).not.toContain("addEventListener('resize'")
+    expect(c).not.toContain('trackHeight(')
+    /* 上一版用来测量的 data-cl-main 标记也不能要 ——
+       有了它就很容易写出「读主区高度 → 算轨道高度」这种代码。 */
+    expect(c).not.toContain('data-cl-main')
+  })
 
   it('外层用 h-screen + flex col + overflow-hidden（让内部能分配高度）', () => {
     const c = viewCode()
@@ -165,17 +200,12 @@ describe('每日回顾不被遮挡（布局结构）', () => {
     expect(c).not.toContain('min-h-screen')
   })
 
-  it('轨道容器不再是写死的 560', () => {
+  it('轨道上下限用 CSS 声明，不用计算值', () => {
     const c = viewCode()
-    expect(c).not.toMatch(/height:\s*560/)
-    expect(c).toContain('style={{ height: trackH }}')
-  })
-
-  it('轨道高度真的调了 trackHeight，且跟着视口变化重算', () => {
-    const c = viewCode()
-    expect(c).toContain('trackHeight(')
-    expect(c).toContain('ResizeObserver')
-    expect(c).toContain("window.addEventListener('resize'")
+    expect(c).toContain('minHeight: TRACK_MIN')
+    expect(c).toContain('maxHeight: TRACK_MAX')
+    /* 不能再有写死的数字高度 */
+    expect(c).not.toMatch(/height:\s*\d\d\d/)
   })
 
   it('每日回顾那一段是 flex-none（不被压缩掉）', () => {
@@ -191,18 +221,22 @@ describe('每日回顾不被遮挡（布局结构）', () => {
     const ui = stripComments(readFileSync(join(here, 'src', 'ui', 'index.tsx'), 'utf8')).slice(0, 1200)
     expect(ui).toContain('flex flex-col')
     /* min-h-0 同样必需 —— flex 子项默认 min-height:auto，
-       内容比容器高时撑破容器，轨道高度就算错了。 */
+       内容比容器高时撑破容器，轨道就抢不到该给回顾区的空间。 */
     expect(ui).toContain('min-h-0')
   })
 
   it('滚动到「现在」的偏移从实测高度算，不是写死的 240', () => {
     const src = stripComments(readFileSync(join(here, 'src', 'components', 'TimeGutter.tsx'), 'utf8'))
     expect(src).not.toMatch(/yT\(m\)\s*-\s*240/)
+    /* clientHeight 是**读**，不是「算完再设」——
+       读容器实际高度来定位滚动位置不存在自反馈。 */
     expect(src).toContain('clientHeight')
   })
 
-  it('轨道上下限是导出的常量（数值验算在 track-height.test.ts）', () => {
+  it('trackHeight 函数已删除（它鼓励自反馈）', () => {
     const src = readFileSync(join(here, 'src', 'components', 'TimeGutter.tsx'), 'utf8')
+    expect(src).not.toContain('export function trackHeight')
+    // 上下限常量留着 —— CSS 里要用
     expect(src).toContain('export const TRACK_MIN')
     expect(src).toContain('export const TRACK_MAX')
   })
