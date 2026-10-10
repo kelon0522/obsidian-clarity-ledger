@@ -1,15 +1,24 @@
 #!/bin/bash
-# 变异测试：逐个注入错误，确认对应断言会红。
+# 变异测试 —— shell 版本。
+#
+# # ⚠️ 这是**回退路径**，主入口是 `node scripts/mutation.mjs`
+#
+# 保留原因：`scripts/mutation.mjs` 在少数受限环境里拿不到子进程输出
+# （spawnSync EBUSY），撞上时整个交给本文件跑。
+#
+# **不要再把它挂回 `npm run mutation`** —— 早先就是这么写的，
+# 于是没装 Git Bash 的 Windows 贡献者跑不了这条命令。
+#
+# 本文件与 `scripts/mutation.mjs` 行为一致，但各写一份。
+# **改流程时两处都要改** —— 或者更好的做法是把变更同步过去，
+# 别让它们悄悄分叉（分叉之后「mutation.sh 说过了、mutation.mjs 没过」
+# 是很难查的问题）。
 #
 # ## 为什么所有外部命令都在 shell 里跑
 #
-# **这个环境里 node 跑不了子进程** ——
-# `spawnSync('git', ...)` 撞 EBUSY，`spawnSync('npx', ...)` 返回 status: null
-# 且一个字节输出都收不到。而从 shell 直接跑两者都正常。
-#
-# 试过 `--reporter=json --outputFile=` 拿明细 —— 根本不产出文件。
-#
-# 所以职责是：node 只做「改文件 + 解析日志」，跑 vitest 和 git 全在这层。
+# **有些环境里从 node spawn 子进程拿不到 stdout/stderr** ——
+# `spawnSync` 返回 `status: null`，一个字节都收不到。
+# 而从 shell 直接跑 `npx vitest run > log 2>&1` 完全正常。
 #
 # ## 文件还原为什么走 git checkout
 #

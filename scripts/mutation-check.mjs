@@ -154,36 +154,49 @@ export const MUTATIONS = [
   },
 
   /* ---------- 全局样式污染 ----------
-     这两条要抓的是「注入用户整个 vault」的行为。
+     这三条要抓的是「注入用户整个 vault」的行为。
      社区目录的 reviewer 会盯这一类，而它们一旦回归是**静默的**：
      插件不报错、功能不坏，只是用户觉得「装了之后界面变了」。
      所以变异也必须有 —— 否则断言可能又变成永远绿的那种。
 
      变异改的是 `src/index.css`（源码侧断言在 `src/config/alias.test.ts`），
-     expectRed 里的名字要与那里的 it() 描述对得上。*/
+     expectRed 里的名字要与那里的 it() 描述对得上。
+
+     **两条跨行的变异都用 `string` 而不是正则** ——
+     正则里的 `\n` 碰上 CRLF 会匹配不上，报出来的是
+     「这个变异是假的 / 从未被验证过」，而真实原因只是行尾符。
+     （早先就踩了：两条新变异当场报「假的」，害我以为断言写错了。）
+     `string` 分支会自己适配 CRLF，用它就没事。 */
   {
     name: 'focus-visible 退回裸选择器（给用户整个 vault 套玫红描边）',
     file: 'src/index.css',
-    from: /\.cl-root :focus-visible \{/,
-    to: ':focus-visible {',
+    string: '.cl-root :focus-visible {',
+    stringTo: ':focus-visible {',
     expectRed: ['focus-visible 限定在 .cl-root 内'],
   },
   {
     name: 'prefers-reduced-motion 退回裸 * （压掉用户所有插件的动效）',
     file: 'src/index.css',
-    from: /  \.cl-root \*,\n  \.cl-root \*::before,\n  \.cl-root \*::after \{/,
-    to: '  *,\n  *::before,\n  *::after {',
+    string: '  .cl-root *,\n  .cl-root *::before,\n  .cl-root *::after {',
+    stringTo: '  *,\n  *::before,\n  *::after {',
     expectRed: ['prefers-reduced-motion 限定在 .cl-root 内'],
   },
   {
     /* 第二层事故：前缀写对了，但**留在 @layer 里** ——
        Tailwind v4 处理 layer 时重写选择器，产物里前缀被剥掉，
        源侧断言全绿、用户那边照样被污染。
-       这条变异模拟的就是「以为改好了，其实在 layer 里」。*/
+       这条变异模拟的就是「以为改好了，其实在 layer 里」。
+
+       注意 `to` 的结尾：**故意不补 `}`** —— 少一个右花括号会让
+       整个 CSS 从这一行起解析失败，套件崩掉（verdict=crashed），
+       那就算「变异改坏了文件」，不算数。要模拟的必须是
+       「语法合法但位置错误」。*/
     name: 'focus-visible 的作用域规则挪进 @layer（Tailwind 会剥掉前缀，源侧看着还对）',
     file: 'src/index.css',
-    from: /\.cl-root :focus-visible \{\n  outline: 2px solid var\(--color-ink\);\n  outline-offset: 2px;\n\}/,
-    to: '@layer base {\n.cl-root :focus-visible {\n  outline: 2px solid var(--color-ink);\n  outline-offset: 2px;\n}',
+    string:
+      '.cl-root :focus-visible {\n  outline: 2px solid var(--color-ink);\n  outline-offset: 2px;\n}',
+    stringTo:
+      '@layer base {\n.cl-root :focus-visible {\n  outline: 2px solid var(--color-ink);\n  outline-offset: 2px;\n}',
     expectRed: ['留在 @layer 之外'],
   },
 ]
@@ -207,10 +220,36 @@ export function applyMutation(m) {
     if (!original.includes(needle)) return { original, mutated: original, path, changed: false }
     mutated = original.replace(needle, repl)
   } else {
-    mutated = original.replace(m.from, m.to)
+    /* 正则分支 —— **同样要处理 CRLF**。
+       早先这里直接 `original.replace(m.from, m.to)`，而变异定义里
+       的正则写的是 `\n`。这个仓库的文件在 Windows 上是 CRLF
+       （git 检出时按 core.autocrlf 转成 CRLF），于是：
+
+       ```
+       /  \.cl-root \*,/   ← 定义里是 LF
+       实际文件里是  \r\n
+       ```
+
+       正则不匹配 → `changed: false` → 报「这个变异是假的」。
+
+       **症状极具误导性**：报的是「断言从未被验证过」，
+       真实原因却是「行尾符不匹配」—— 而那条断言其实有效得很。
+       这个项目在这类「报错指向A、原因在B」上栽过好几次了。
+
+       修法：文件是 CRLF 时，把正则里的 `\n` 换成 `\r\n`。
+       用 `source.replace(/\\n/g, '\\r\\n')` 只动反斜杠+n 这个两字符序列，
+       不会误伤 `\n` 字面量以外的东西。*/
+    let re = m.from
+    if (original.includes('\r\n')) re = adaptCrlf(m.from)
+    mutated = original.replace(re, m.to)
   }
   if (m.after) mutated = m.after(mutated)
   return { original, mutated, path, changed: mutated !== original }
+}
+
+/** 把正则源码里的 `\n` 转义换成 `\r\n` 转义（行尾符对齐用） */
+function adaptCrlf(re) {
+  return new RegExp(re.source.replace(/\\n/g, '\\r\\n'), re.flags)
 }
 
 /**

@@ -1,34 +1,27 @@
 #!/bin/bash
-# 测试 runner —— 不直接用 `vitest run`。
+# 测试 runner —— shell 版本。
 #
-# ## 为什么要有这个
+# # ⚠️ 这是**回退路径**，主入口是 `node scripts/test.mjs`
 #
-# **vitest 会报假绿。** 踩过的现象：
+# 保留这个文件有两个原因：
 #
-# ```
-#  Test Files  1 failed | 4 passed (5)
-#       Tests  125 passed (125)
-# ```
+# 1. `scripts/test.mjs` 在少数受限环境里拿不到子进程输出
+#    （spawnSync EBUSY，见那边注释），撞上时整个交给本文件跑。
+# 2. 它是这个逻辑最早的实现，判定规则（run-tests.mjs 里的三条）
+#    在这里也能独立跑通 —— 交叉验证。
 #
-# `alias.test.ts` 因语法错误**整个套件加载失败**（0 条用例执行），
-# 但摘要里既没有 failed 计数、也没把它算进 Tests 总数，**退出码还是 0**。
-# 只看最后一行会得出「125 全绿」—— 而实际上有 25 条用例根本没跑。
+# **不要再把它挂回 `npm test`** —— 早先就是这么写的，
+# 于是没装 Git Bash 的 Windows 贡献者根本跑不了测试。
 #
-# 所以做三道校验（`run-tests.mjs` 负责解析，这层负责跑）：
+# 本文件只管「跑 vitest + 落日志 + 调校验器」，判定规则全在
+# `scripts/run-tests.mjs`（node，跨平台），shell 与 node 不重复实现。
 #
-# 1. **退出码非 0** → 直接失败
-# 2. **有文件失败但用例零失败** → 典型的套件加载失败，摘要看不出来
-# 3. **用例总数为 0** → 全部套件都没加载
+# ## 为什么测试要过 shell 层重定向而不是 node 接管道
 #
-# 另外 `vitest.config.ts` 里的 `fileParallelism: false` + `singleFork`
-# 是 vitest 侧的配置，绕开 Windows 上偶发的 EPERM。
-#
-# ## 为什么在 shell 层重定向而不是 node 接管道
-#
-# **这个环境里 node 接子进程的 stdout 会拿到空串**（见 mutation-check.mjs）。
+# **有些环境里 node 接子进程的 stdout 会拿到空串**（见 mutation-check.mjs）。
 # 所以跑测试 + 拿输出这两件事都在 shell 里做，node 只解析文件。
 #
-# 用法：`npm test`
+# 用法：`npm test`（走 node 入口，必要时自动落到这里）
 
 set -u
 cd "$(dirname "$0")/.."

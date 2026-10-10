@@ -61,11 +61,22 @@ jobs:
       # 缺了审核会直接打回。跑测试是发现不了这种缺失的。
       - name: Check submission assets
         run: |
-          test -f icon.png      || { echo "::error::缺 icon.png（社区列表图标，100x100 PNG）"; exit 1; }
+          test -f icon.png       || { echo "::error::缺 icon.png（社区列表图标，100x100 PNG）"; exit 1; }
           test -f screenshot.png || { echo "::error::缺 screenshot.png（README 顶部截图）"; exit 1; }
-          test -f LICENSE       || { echo "::error::缺 LICENSE（社区目录硬性要求）"; exit 1; }
-          node -e "
-            const s=require('fs').statSync('icon.png');
-            console.log('icon.png', s.size, 'bytes');
-          "
-          echo "上架资源齐备"
+          test -f LICENSE        || { echo "::error::缺 LICENSE（社区目录硬性要求）"; exit 1; }
+          test -f CONTRIBUTING.md || { echo "::error::缺 CONTRIBUTING.md"; exit 1; }
+
+      # 图标尺寸要真的对 —— 社区目录会把它缩成小图标显示，
+      # 尺寸不对会被自动裁掉一部分。跑测试发现不了这个。
+      - name: Check icon dimensions
+        run: |
+          SIZE=$(node -e "
+            const b=require('fs').readFileSync('icon.png');
+            if(b.toString('ascii',1,4)!=='PNG'){console.error('icon.png 不是 PNG');process.exit(1)}
+            console.log(b.readUInt32BE(16)+'x'+b.readUInt32BE(20));
+          ")
+          echo "icon.png 实际尺寸: $SIZE"
+          [ "$SIZE" = "100x100" ] || {
+            echo "::error::icon.png 必须是 100x100（当前 $SIZE），社区列表会裁掉不合规的尺寸"
+            exit 1
+          }
