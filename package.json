@@ -16,7 +16,7 @@
     "build:css": "vite build --config vite.css.config.ts && node scripts/move-css.mjs",
     "build:js": "tsc --noEmit -p tsconfig.json && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "bash scripts/run-tests.sh",
     "test:watch": "vitest",
     "mutation": "bash scripts/mutation.sh",
     "version": "node -e \"const fs=require('fs'),m=require('./manifest.json'),p=require('./package.json');m.version=p.version;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\\n');const v=require('./versions.json');v[p.version]=m.minAppVersion;fs.writeFileSync('versions.json',JSON.stringify(v,null,2)+'\\n')\" && git add manifest.json versions.json && git commit -m \"chore: v\""

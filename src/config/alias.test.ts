@@ -105,6 +105,52 @@ function cssBracesAreBalanced(src: string): boolean {
 }
 
 /**
+ * CSS 的**纯块注释剥离** —— 只删成对的块注释标记，保留其他一切。
+ *
+ * **用途仅限「数花括号深度」。** 那种场景需要配平的代码，
+ * 跨行块注释里的真实声明必须一起删掉，否则花括号配不平。
+ *
+ * **不能用来提取 `@source` 的路径** ——
+ * glob 里的递归通配（两个星号紧跟一个斜杠）会被当成注释结束符，
+ * 于是 `'./components/' + 通配` 被截成 `'./components' + 半个通配`，路径信息全丢。
+ * 那件事要用 `cssSourcePaths`（逐行取，不剥注释）。
+ *
+ * 也不能替代 `stripComments` 读 TS —— 它的双斜杠规则会截断同样的通配。
+ *
+ * （这条注释本身也有个坑：上面那段描述里如果直接写出通配原文，
+ * 会把**本注释**提前闭合。同一个坑在这个文件里踩了三次。）
+ */
+function stripCssComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/**
+ * 取一段规则（从行首的选择器开始，到它自己的 `}` 结束）。
+ *
+ * ## 为什么必须锚定行首
+ *
+ * 早先用 `src.indexOf(selector)` —— 抓到的是**注释里提到的那次**，
+ * 而不是规则本身。切片从注释中间开始，`appearance: none` 那些真实声明
+ * 一条都没包含进去，提取数恒为 0。
+ * **报错是「expected +0 to be 2」，看起来像「声明被删了」，
+ * 实际是定位错了位置。**
+ *
+ * 行首锚定（`\n` 或字符串开头 + 选择器 + `{`）才是规则的定义处。
+ *
+ * 也因此这里用**原文**：规则内部可能有跨行注释，
+ * 任何过滤都可能切掉声明。
+ */
+function cssRule(src: string, selector: string): string {
+  const re = new RegExp(`(?:^|\\n)[ \\t]*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`)
+  const m = re.exec(src)
+  if (!m) return ''
+  const start = m.index + (m[0].startsWith('\n') ? 1 : 0)
+  // 从选择器起的第一个 `}` 就是这条规则的结尾
+  const end = src.indexOf('}', start)
+  return end < 0 ? '' : src.slice(start, end + 1)
+}
+
+/**
  * 只取 CSS 里**代码部分**的 `@source` 路径。
  *
  * 逐行取而不是正则全文扫：注释里的 `@source` 一定以 `*` 开头
@@ -245,14 +291,21 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
    */
   it('隔离层不在 @layer 里（进了就被主题压掉，等于没写）', () => {
     const css = read('src/index.css')
-    /* 前置条件：注释里不能有裸花括号，否则下面的深度计算全错。
-       这条必须先跑 —— 它守着后面几条断言的正确性。 */
-    expect(cssBracesAreBalanced(stripCssCommentLines(css))).toBe(true)
 
-    /* 全文扫会误报注释里的 @layer —— 这个文件里有好几段注释正是在解释
-       「为什么不能进 layer」，那些字面量必然出现。 */
-    const code = stripCssCommentLines(css)
-    const i = code.indexOf('.cl-cal button')
+    /* 数花括号深度需要配平的前置条件。**这里的「剥注释」用的是
+       完整块注释剥离**（`stripCssComments`），不是行过滤 ——
+       跨行块注释里夹着真实的声明（说明文字后面紧跟 `appearance: none;`），
+       行过滤只滤「整行是注释」的行，那些声明会以裸行残留，
+       花括号就配不平了。
+       「块注释剥离会不会误伤 glob」那个坑只影响 `@source` 的**路径文本**，
+       而深度分析只关心花括号，两者互不干扰。 */
+    const code = stripCssComments(css)
+    expect(cssBracesAreBalanced(code)).toBe(true)
+
+    /* 用**剥注释后**的代码定位 —— 注释里提到的那个 `.cl-cal button`
+       已经被剥掉了，剩下的就是规则本身。
+       （早先在原文里 indexOf，抓到的是注释中间那处，切片里一条声明都没有。）*/
+    const i = code.search(/(?:^|\n)[ \t]*\.cl-cal button\s*\{/)
     expect(i).toBeGreaterThan(-1)
 
     /* 数花括号深度，隔离层处必须是 0 —— 也就是不在任何 @layer 里。
@@ -283,8 +336,7 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
    * 变异删掉任一条，次数都会变 —— 抓得到。
    */
   it('清掉了主题给 button 的默认外观（按出现次数算，前缀变体已归并）', () => {
-    const css = read('src/index.css')
-    const seg = css.slice(css.indexOf('.cl-cal button'), css.indexOf('.cl-nav'))
+    const rule = cssRule(read('src/index.css'), '.cl-cal button')
 
     /* 提取「属性: 值」形式的声明 —— **正则里不要带分号**。
        带上的话提取结果全是 `appearance: none;`，而下面的 count 比的是
@@ -294,7 +346,7 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
        实际是**两边格式不一致**。
 
        前缀要去掉，这样「删了标准那条」和「删了前缀那条」都会让次数变化。 */
-    const decls = (seg.match(/^[ \t]*(?:-webkit-|-moz-|-ms-)?[a-z-]+:\s*[^;]+/gm) ?? []).map((s) =>
+    const decls = (rule.match(/^[ \t]*(?:-webkit-|-moz-|-ms-)?[a-z-]+:\s*[^;]+/gm) ?? []).map((s) =>
       s.trim().replace(/^-(?:webkit|moz|ms)-/, ''),
     )
     const count = (decl: string) => decls.filter((d) => d === decl).length
@@ -324,12 +376,11 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
    * 两条配合才能把两种变异都抓住。
    */
   it('appearance 同时写了标准属性和 -webkit- 前缀（Safari 旧版要）', () => {
-    const css = read('src/index.css')
-    const seg = css.slice(css.indexOf('.cl-cal button'), css.indexOf('.cl-nav'))
+    const rule = cssRule(read('src/index.css'), '.cl-cal button')
     // 标准那条：行首就是 appearance，前面没有 -
-    expect(seg).toMatch(/^[ \t]*appearance:\s*none;/m)
+    expect(rule).toMatch(/^[ \t]*appearance:\s*none;/m)
     // 前缀那条：明确写出 -webkit-
-    expect(seg).toMatch(/^[ \t]*-webkit-appearance:\s*none;/m)
+    expect(rule).toMatch(/^[ \t]*-webkit-appearance:\s*none;/m)
   })
 
   it('日期格用具名 class 而不是长串工具类', () => {
@@ -364,6 +415,57 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
     expect(i).toBeGreaterThan(-1)
     const seg = css.slice(i, i + 120)
     expect(seg).toContain('background: var(--color-ink)')
+  })
+
+  /**
+   * **视觉规范必须整段都在，不能只搬一部分。**
+   *
+   * 抽离独立仓库时，我把 CSS 头部手工重拼了一遍，
+   * 结果 `@layer base` 里的 `.ruled` / `.blk` / `:focus-visible`
+   * 和整个 `@layer components`（日历的 6 个类名）**全部丢失**。
+   *
+   * 表现是构建通过、测试全绿、产物 27 KB 看着正常 ——
+   * **只有一个信号：产物里没有 `repeating-linear-gradient`**，
+   * 而那正是 `verify-build.mjs` 最后一项报红的。
+   *
+   * 所以这条断言直接列出**必须存在的选择器清单**。
+   * 少了任何一个都会红 —— 这类「搬代码时丢整段」的回归
+   * 靠逐个断言视觉属性是抓不全的。
+   */
+  it('视觉规范的选择器一个都不能少', () => {
+    const css = stripCssCommentLines(read('src/index.css'))
+    const REQUIRED = [
+      // 横格底 —— 工字格的灵魂
+      '.ruled',
+      // 拖动手型
+      '.blk',
+      // 键盘焦点可见性（可访问性底线）
+      ':focus-visible',
+      // 日历：箭头 / 日期格 / 有任务的日子的小点 + 5 个状态修饰
+      '.cl-nav',
+      '.cl-day',
+      '.cl-day:hover',
+      '.cl-day.has',
+      '.cl-day.empty',
+      '.cl-day.today',
+      '.cl-day.cur',
+      '.cl-dot',
+      // 插件挂载点
+      '.cl-root',
+    ]
+    const missing = REQUIRED.filter((sel) => !css.includes(sel))
+    expect(missing).toEqual([])
+  })
+
+  it('横格线用的是 repeating-linear-gradient（不是纯色边框）', () => {
+    const css = read('src/index.css')
+    const i = css.indexOf('.ruled {')
+    expect(i).toBeGreaterThan(-1)
+    const seg = css.slice(i, css.indexOf('}', i))
+    expect(seg).toContain('repeating-linear-gradient')
+    /* 间距必须跟着 --spacing-row 走。硬编码 px 的话，
+       ROWH 一改这里就错位，而且不会有任何报错。*/
+    expect(seg).toContain('var(--spacing-row)')
   })
 
   it('底色跟着 Obsidian 主题走（硬写纸面色会在暗色主题下刺眼）', () => {

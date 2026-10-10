@@ -64,13 +64,136 @@
 @source './ui/**/*.{ts,tsx}';
 @source './**/*.{ts,tsx}';
 
+/*
+ * 日历的日期格与月份箭头。
+ *
+ * **用具名 class 而不是一长串 Tailwind 工具类** ——
+ * Obsidian 主题的 CSS 不分层，会直接压掉 `aspect-square` / `bg-ink` 这类
+ * 工具类（见下面「宿主主题的隔离层」）。用具名 class 才有一处可改的地方。
+ *
+ * `.cl-cal button` 的隔离层**必须留在 @layer 之外** ——
+ * 放进 layer 等于没写。变异测试会在把这段包进 layer 时报红。
+ */
+@layer components {
+  .cl-nav {
+    width: 1.25rem;
+    height: 1.25rem;
+    line-height: 1;
+    border: 1px solid var(--color-rule2);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--color-dim);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .cl-nav:hover {
+    border-color: var(--color-ink);
+    color: var(--color-ink);
+  }
+
+  .cl-day {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border-radius: 3px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+  .cl-day:hover {
+    background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+  }
+  .cl-day.has {
+    color: var(--color-ink2);
+  }
+  .cl-day.has:hover {
+    background: var(--color-soft);
+  }
+  .cl-day.empty {
+    color: var(--color-dim2);
+  }
+  .cl-day.today {
+    border: 1px solid var(--color-ink2);
+  }
+  /* 「今天选中的那天」= 实心玫红块，用户最直观的对错信号 */
+  .cl-day.cur {
+    background: var(--color-ink);
+    color: #fff;
+  }
+  .cl-day.cur:hover {
+    background: var(--color-ink);
+  }
+  /* 有任务的日子打一个小点 */
+  .cl-dot {
+    position: absolute;
+    bottom: 0.2rem;
+    width: 0.2rem;
+    height: 0.2rem;
+    border-radius: 9999px;
+    background: var(--color-ink2);
+  }
+  .cl-day.cur .cl-dot {
+    background: #fff;
+  }
+}
+
+/* 尊重系统的「减少动效」设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer base {
-  /* 插件的挂载点铺满视图区，body 的底色不归我们管 */
+  /*
+   * 插件的挂载点铺满视图区，**body 的底色不归我们管** ——
+   * Obsidian 主题要跟着走，硬写纸面色会在用户用暗色主题时白得刺眼。
+   */
   .cl-root {
     background: var(--color-page);
     color: var(--color-text);
     min-height: 100%;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * 时间轴横格底 —— 工字格的灵魂，少了它时间块就没有「写在纸上」的质感。
+   *
+   * **间距必须等于 ROWH**（`var(--spacing-row)`），否则块的高度和横格线错位。
+   * `scripts/verify-build.mjs` 会断言产物里有这段
+   * `repeating-linear-gradient`，防它被静默删掉。
+   */
+  .ruled {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--spacing-row) - 1px),
+      var(--color-rule) calc(var(--spacing-row) - 1px),
+      var(--color-rule) var(--spacing-row)
+    );
+  }
+
+  /* 拖动中的手型光标 */
+  .blk {
+    cursor: grab;
+  }
+  .blk:active {
+    cursor: grabbing;
+  }
+
+  /*
+   * 键盘焦点必须看得见 —— 这是可访问性的底线。
+   * 时间轴能 Tab 遍历，没有这条键盘用户根本不知道自己在哪。
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
   }
 
   /*
