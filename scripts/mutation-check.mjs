@@ -112,16 +112,32 @@ export function applyMutation(m) {
   return { original, mutated, path, changed: mutated !== original }
 }
 
+/**
+ * 剥掉 ANSI 转义序列。
+ *
+ * **vitest 的输出带颜色码**，且颜色码会插在断言名的中间：
+ * `\x1b[31m   × \x1b[31m模块绑定\x1b[2m > \x1b[22mCSS里的...\x1b[90m 10\x1b[2mms`
+ * 不剥的话 `\d+ms$` 锚点永远匹配不上，**所有变异都会误判成「全绿」**。
+ * 这个坑的表现和「断言完全失效」一模一样 —— 但根因只是颜色码。
+ */
+export function stripAnsi(s) {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;]*m/g, '')
+}
+
 /** 解析 vitest 日志，取变红的断言名 */
 export function parseFailures(log) {
+  const clean = stripAnsi(log)
   const failed = []
-  for (const m of log.matchAll(/^\s*[×x]\s+(.+?)\s+\d+ms\s*$/gm)) failed.push(m[1].trim())
+  // 形如「   × describe > it  10ms」
+  for (const m of clean.matchAll(/^\s*[×x]\s+(.+?)\s+\d+ms\s*$/gm)) failed.push(m[1].trim())
   return failed
 }
 
 /** 日志里有没有「套件整体崩了」的迹象（变异把文件改坏） */
 export function suiteCrashed(log) {
-  return /Failed Suites|Transform failed|Error: |SyntaxError/.test(log)
+  const clean = stripAnsi(log)
+  return /Failed Suites|Transform failed|SyntaxError|Error: /.test(clean)
 }
 
 export { root, here, rmSync, readFileSync, writeFileSync, join }
