@@ -106,6 +106,14 @@ export const MUTATIONS = [
     expectRed: ['paths 只有一条'],
   },
 
+  {
+    name: '样式配置改回 .ts（纯 ESM 的@tailwindcss/vite 加载失败）',
+    file: 'package.json',
+    string: '"build:css": "vite build --config vite.css.config.mts',
+    stringTo: '"build:css": "vite build --config vite.css.config.ts',
+    expectRed: ['样式配置是 .mts'],
+  },
+
   /* ---------- 迁移规划（破坏性操作，必须有断言守着） ---------- */
   {
     name: '迁移：冲突初值改回same-day（全表被标成冲突，迁移静默全跳过）',

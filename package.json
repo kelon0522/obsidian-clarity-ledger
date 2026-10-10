@@ -11,9 +11,9 @@
   ],
   "scripts": {
     "dev": "node esbuild.config.mjs watch",
-    "dev:css": "vite build --config vite.css.config.ts --watch",
+    "dev:css": "vite build --config vite.css.config.mts --watch",
     "build": "npm run build:css && tsc --noEmit -p tsconfig.json && node esbuild.config.mjs production && node scripts/verify-build.mjs",
-    "build:css": "vite build --config vite.css.config.ts && node scripts/move-css.mjs",
+    "build:css": "vite build --config vite.css.config.mts && node scripts/move-css.mjs",
     "build:js": "tsc --noEmit -p tsconfig.json && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bash scripts/run-tests.sh",

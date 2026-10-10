@@ -21,7 +21,7 @@
  *   回归防线换了个位置：`scripts/verify-build.mjs` 查产物里有没有重复打包。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 /* `import.meta.url` 在 vitest 转换后不是 file URL，fileURLToPath 会抛
@@ -239,6 +239,46 @@ describe('构建配置', () => {
     expect(t).toContain('"@/*": ["src/*"]')
     expect(t).not.toContain('@app/*')
   })
+
+  /**
+   * vite 的样式配置**必须是 `.mts`**，不能是 `.ts`。
+   *
+   * ## 报过的错
+   *
+   * ```
+   * The CJS build of Vite's Node API is deprecated.
+   * failed to load config from vite.css.config.ts
+   * ERR_REQUIRE_ESM: require() of ES Module
+   *   node_modules/@tailwindcss/vite/dist/index.mjs not supported
+   * ```
+   *
+   * ## 机制
+   *
+   * Vite 对 `.ts` 配置的做法是「**先用 esbuild 打包成 CJS，再 require 加载**」。
+   * 而 `@tailwindcss/vite` 是**纯 ESM** 包（只有 `.mjs`）——
+   * CJS 里 `require()` 一个 ESM，Node 直接抛 `ERR_REQUIRE_ESM`。
+   *
+   * `.mts` = ESM Module TypeScript，Vite 见到它会**直接用原生 ESM 加载**，
+   * 不走「打包成 CJS」那条路，`import`也就合法了。
+   *
+   * ## 为什么要有这条断言
+   *
+   * 这个 bug 的特点是**改文件名就好了，代码一个字没动** ——
+   * 没有任何代码层面的线索指向「文件名决定模块加载方式」。
+   * 有人（包括我）把它改回 `.ts`，会得到一个「配置看起来完全正常」的仓库
+   * 和一条谁都看不懂的报错。
+   */
+  it('样式配置是 .mts（.ts 会让纯 ESM 的 @tailwindcss/vite 加载失败）', () => {
+    const pkg = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'))
+    const cfg = pkg.scripts['build:css'] ?? ''
+    const dev = pkg.scripts['dev:css'] ?? ''
+    expect(cfg).toContain('vite.css.config.mts')
+    expect(dev).toContain('vite.css.config.mts')
+    // 文件确实存在（改名的漏一半是最容易发生的）
+    expect(existsSync(join(here, 'vite.css.config.mts'))).toBe(true)
+    // **旧的 .ts 不能再存在** —— 留着会让下一个人以为是备选方案
+    expect(existsSync(join(here, 'vite.css.config.ts'))).toBe(false)
+  })
 })
 
 describe('CSS 扫描范围', () => {
@@ -270,7 +310,7 @@ describe('CSS 扫描范围', () => {
   })
 
   it('vite 的 root 没有被抬到仓库外', () => {
-    expect(stripComments(read('vite.css.config.ts'))).not.toContain("path.join(here, '..')")
+    expect(stripComments(read('vite.css.config.mts'))).not.toContain("path.join(here, '..')")
   })
 })
 
