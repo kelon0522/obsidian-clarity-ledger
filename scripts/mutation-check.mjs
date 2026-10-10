@@ -136,7 +136,7 @@ export const MUTATIONS = [
   },
 ]
 
-/** 改文件，返回 { changed } —— changed=false 表示变异没生效（正则没匹配上） */
+/** 改文件，返回 { changed } —— changed=false 表示变异没生效（没匹配上） */
 export function applyMutation(m) {
   const path = join(root, m.file)
   const original = readFileSync(path, 'utf8')
@@ -144,11 +144,16 @@ export function applyMutation(m) {
   let mutated
   if (typeof m.string === 'string') {
     /* 字符串精确替换。
-       **优先用这个而不是正则** —— 正则里 `f.length + 1` 的 `+` 会被当量词，
-       没匹配上时报「变异是假的」，而那恰恰意味着这条断言从未被验证过。
-       变异脚本里这两种失败长得像，含义完全相反。*/
-    if (!original.includes(m.string)) return { original, mutated: original, path, changed: false }
-    mutated = original.replace(m.string, m.stringTo)
+       - 优先用这个而不是正则：`f.length + 1` 的 `+` 会被当量词，
+         没匹配上时报「变异是假的」，而那恰恰意味着断言从未被验证过
+       - **换行符必须两边都对齐** —— 这个仓库的文件在 Windows 上是 CRLF，
+         而变异定义里写的是 LF。`includes` 直接比会永远为 false，
+         而且报错会指向「正则没匹配上」，与真实原因无关 */
+    const crlf = original.includes('\r\n')
+    const needle = crlf ? m.string.replace(/\n/g, '\r\n') : m.string
+    const repl = crlf ? m.stringTo.replace(/\n/g, '\r\n') : m.stringTo
+    if (!original.includes(needle)) return { original, mutated: original, path, changed: false }
+    mutated = original.replace(needle, repl)
   } else {
     mutated = original.replace(m.from, m.to)
   }

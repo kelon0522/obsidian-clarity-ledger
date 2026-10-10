@@ -39,8 +39,9 @@ if (cmd === 'apply') {
   }
   const { mutated, path, changed } = applyMutation(m)
   if (!changed) {
-    // 变异没生效 = 正则没匹配上。必须单独报，否则会误判成「断言无效」
-    console.error(`第 ${idx} 个变异的正则没匹配上 ${m.file} —— 这个变异是假的`)
+    // 变异没生效 —— 意味着**这条断言从未被验证过**，必须报出来。
+    // 绝不能把它算成「断言有效」或「断言无效」，那是两回事
+    console.error(`第 ${idx} 个变异没匹配上 ${m.file} —— 这个变异是假的`)
     process.exit(3)
   }
   writeFileSync(path, mutated)
