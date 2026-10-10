@@ -41,7 +41,21 @@ npm run mutation        # 变异测试（见下）
 npm run test:watch      # 监听模式
 ```
 
-**Windows / macOS / Linux 都能跑**，脚本是纯 node 驱动。
+**Windows / macOS / Linux 都能跑**，脚本是 node 驱动。
+（早先版本直接写 `bash scripts/run-tests.sh`，于是没装 Git Bash 的 Windows
+机器根本跑不了测试 —— 社区插件的测试跑不起来等于没有测试。）
+
+### 变异测试的输出别读错
+
+`npm run mutation` 会报「变异没生效 / 这个变异是假的」。
+**这句话的意思是「这条断言从未被验证过」，不是「断言写错了」。**
+
+真实案例（2026-10-10）：新加的两条变异一跑就报「假的」，
+让人以为断言有问题。真实原因是 `src/index.css` 在 Windows 上是 **CRLF**，
+而变异定义里写的是 **LF** —— 正则匹配不上。
+
+写变异时的规矩：**跨行的替换一律用 `string` / `stringTo`，不要用正则**。
+`string` 分支会自动适配行尾符。
 
 ### 为什么有mutation 这一条命令
 
