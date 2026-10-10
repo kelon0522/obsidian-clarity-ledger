@@ -1,0 +1,45 @@
+name: Release
+
+# tag push 时自动发版。
+#
+# **tag 必须严格等于 manifest.json 的 version，且不带 v 前缀** ——
+# Obsidian 按 version 去找同名 tag 的 Release，带 v 就匹配不上，
+# 用户装不到更新。npm version 会自动打上不带前缀的 tag。
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # 产物自检：真的 require 一遍 main.js、检查样式齐备。
+      # 发版是最后一道闸，构建产物有问题绝不能传上去 ——
+      # 用户装到坏版本只能等下一次发版才能修回来。
+      - name: Verify build
+        run: node scripts/verify-build.mjs
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            main.js
+            manifest.json
+            styles.css
+          #附件必须逐个列出。塞在 source.zip 里 Obsidian 读不到。

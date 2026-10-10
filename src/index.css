@@ -1,0 +1,237 @@
+/**
+ * 插件的样式入口。
+ *
+ * ## 视觉规范（@theme 段）
+ *
+ * 工字格的全部设计令牌都在下面这段里 —— 玫红主色、纸面底色、横格线、
+ * 手写体字体栈，以及最要紧的**时间轴几何**。
+ *
+ * **关键约束：`--spacing-row` 必须等于 `src/core/time.ts` 里的 `ROWH`（40px）。**
+ * 横格底是`repeating-linear-gradient` 画的，间距对不上，
+ * 时间块的高度就会和横格线错位 —— 改一个必须改另一个。
+ *
+ * 这段原先是从另一个仓库 `@import` 过来的，为了「同一张纸」。
+ * 独立仓库后直接内联：跨仓库 import 在构建产物里不留痕迹，
+ * 但会让「这个插件的视觉定义在哪」变得需要跳转才知道。
+ */
+
+@import 'tailwindcss';
+
+@theme {
+  /* 纸面 */
+  --color-paper: #fefdf8;
+  --color-paper2: #fbf9f1;
+  --color-page: #efede6;
+
+  /* 横格线 */
+  --color-rule: #e7e1d2;
+  --color-rule2: #d9d2bf;
+
+  /* 玫红主色 */
+  --color-ink: #d81b60;
+  --color-ink2: #a8154a;
+  --color-soft: #f9dce7;
+  --color-soft2: #f2c6d8;
+
+  /* 文字 */
+  --color-text: #332e28;
+  --color-dim: #8c8377;
+  --color-dim2: #ada395;
+
+  /* 时间轴几何 —— 与 core/time.ts 的 ROWH 必须一致 */
+  --spacing-row: 40px;
+  --spacing-slot: 15px;
+
+  /* 手写体：待办 / 标题 / 时长标注用 */
+  --font-hw: 'Segoe Print', 'Bradley Hand', KaiTi, STKaiti, 楷体, cursive;
+
+  --shadow-paper: 0 1px 0 #fff, 0 10px 30px -18px rgb(60 45 30 / 0.5);
+  --shadow-card: 0 8px 22px -18px rgb(60 45 30 / 0.45);
+}
+
+/*
+ * Tailwind v4 要显式声明扫描范围，否则只用到的类名才进产物。
+ *
+ * **必须用递归通配** —— 只写目录不递归，等于没扫。
+ * 路径相对**本文件**（Tailwind 自己这么解析），不是相对 Vite root。
+ *
+ * 早先这里还扫过另一个仓库的 components，因为组件是从那边搬过来的。
+ * 现在组件就在本仓库 src/components，Vite root 之内 ——
+ * 顺带消掉一个静默失败：`@source` 指向 Vite root 之外会被**静默忽略**，
+ * 不报错不警告，产物从 31 KB 掉到 9 KB，只剩变量壳，界面完全没有样式。
+ */
+@source './components/**/*.{ts,tsx}';
+@source './ui/**/*.{ts,tsx}';
+@source './**/*.{ts,tsx}';
+
+@layer base {
+  /* 插件的挂载点铺满视图区，body 的底色不归我们管 */
+  .cl-root {
+    background: var(--color-page);
+    color: var(--color-text);
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Obsidian 的 `mod-*` 类会改全局字体/字号，工字格的手写体会被冲掉。
+   * 这里把关键容器显式隔离，不让 Obsidian 主题渗进来。
+   */
+  .cl-root input,
+  .cl-root button,
+  .cl-root textarea {
+    font-family: inherit;
+  }
+
+  /** Obsidian 默认给 view 加了内边距，工字格要贴边 */
+  .clarity-ledger-container {
+    padding: 0;
+    overflow-y: auto;
+  }
+}
+
+/* ==================================================================
+ * 宿主主题的隔离层
+ * ==================================================================
+ *
+ * ## 为什么不写在 @layer 里
+ *
+ * CSS 层叠有个反直觉的规则：**不分层的样式永远赢过分层的**。
+ * Tailwind v4 把所有工具类放进 `@layer utilities`，
+ * 而 Obsidian 的主题 CSS 是不分层的 ——
+ * 所以主题的 `button { ... }` 会压掉我们的 `bg-ink` / `aspect-square`。
+ *
+ * 表现（2026-10-10 主理人截图）：
+ *   - 每个日期格有灰底 + 边框（本该透明）
+ *   - 格子宽度被padding 撑开，7 列对不齐
+ *   - 「今天」不是实心玫红块，而是灰底 + 白字
+ *   - 上/下月按钮变成 Obsidian 的方块样式
+ *
+ * **所以下面这段必须留在 @layer 外面** —— 放进 layer 等于没写。
+ */
+
+.cl-cal button {
+  /* 抹掉主题给 button 的默认外观。appearance + background + border + box-shadow
+     这四项是「灰底方块」的来源，必须显式清掉，不能靠不写。 */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  /* padding 是宽度对不齐的直接原因：aspect-square 算的是 content-box，
+     主题给button 加的 padding 把它撑成了不等宽。 */
+  padding: 0;
+  margin: 0;
+  /* 主题会设 min-height / min-width，非 0 值会让格子互相挤 */
+  min-height: 0;
+  min-width: 0;
+  /* 字体字号也归我们管，否则手写体会被主题的无衬线体冲掉 */
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* 上/下月箭头：恢复成 Web 版那个小圆钮 */
+.cl-cal .cl-nav {
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1;
+  border: 1px solid var(--color-rule2);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-dim);
+  font-size: 11px;
+}
+.cl-cal .cl-nav:hover {
+  border-color: var(--color-ink);
+  color: var(--color-ink);
+}
+
+/* 日期格：正方形 + 各自的文字色 */
+.cl-cal .cl-day {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-radius: 3px;
+  background: transparent;
+  border: 0;
+}
+.cl-cal .cl-day:hover {
+  background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+}
+.cl-cal .cl-day.has {
+  color: var(--color-ink2);
+}
+.cl-cal .cl-day.has:hover {
+  background: var(--color-soft);
+}
+.cl-cal .cl-day.empty {
+  color: var(--color-dim2);
+}
+.cl-cal .cl-day.today {
+  border: 1px solid var(--color-ink2);
+}
+.cl-cal .cl-day.cur {
+  background: var(--color-ink);
+  color: #fff;
+}
+.cl-cal .cl-day.cur:hover {
+  background: var(--color-ink);
+}
+.cl-cal .cl-dot {
+  position: absolute;
+  bottom: 0.2rem;
+  width: 0.2rem;
+  height: 0.2rem;
+  border-radius: 9999px;
+  background: var(--color-ink2);
+}
+.cl-cal .cl-day.cur .cl-dot {
+  background: #fff;
+}
+
+/* ==================================================================
+ * 设置面板
+ * ==================================================================
+ *
+ * 同样**必须在 @layer 外面** —— 理由同上面的日历隔离层：
+ * Obsidian 主题不分层，进了 layer 会被它的 input/button 样式压掉。
+ * 而且设置面板本身就是 Obsidian 的界面，用主题的控件样式反而更协调，
+ * 这里只做最小调整：说明文字别跟主题抢字号、占位符代码块等宽对齐。
+ */
+
+.cl-settings h2 {
+  margin: 0 0 0.2rem;
+}
+
+.cl-settings-note {
+  color: var(--color-dim);
+  font-size: 12.5px;
+  margin: 0 0 1rem;
+}
+
+.cl-settings-preview {
+  margin: -0.35rem 0 0.55rem;
+  font-size: 12px;
+  color: var(--color-ink2);
+  font-family: var(--font-hw);
+}
+
+.cl-settings-tokens {
+  margin: 0 0 1.1rem;
+  font-size: 11.5px;
+  color: var(--color-dim2);
+}
+.cl-settings-tokens code {
+  font-family: var(--font-mono, monospace);
+  background: var(--color-soft);
+  color: var(--color-ink2);
+  padding: 0.05em 0.35em;
+  border-radius: 3px;
+  margin-right: 0.2em;
+}

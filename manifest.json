@@ -1,0 +1,10 @@
+{
+  "id": "clarity-ledger",
+  "name": "Clarity Ledger",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "按《认知觉醒》的工字格笔记法做每日清晰力规划。待办是主表，计划与实际是它的两个投影；数据以 Markdown 存在 vault 里，可被全文搜索.",
+  "author": "kelon",
+  "authorUrl": "https://github.com/kelon",
+  "isDesktopOnly": true
+}

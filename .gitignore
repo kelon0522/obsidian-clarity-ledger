@@ -1,0 +1,24 @@
+node_modules/
+
+# 构建产物。**故意不进仓库** ——
+# Obsidian 从 GitHub Release 的附件里取这三个文件，不是从源码树。
+# 所以每次发版是 `npm run build` 现产物当附件上传，
+# 仓库里放一份只会让人以为「改了 main.js 就生效了」。
+main.js
+styles.css
+
+.css-build/
+node.tsbuildinfo
+.meta.json
+
+# icon.png / screenshot.png / LICENSE / versions.json 是要进仓库的 ——
+# 社区列表的图标来自 icon.png，README 里的截图来自 screenshot.png。
+!icon.png
+!screenshot.png
+
+.DS_Store
+Thumbs.db
+
+# 变异测试的临时产物
+.vitest-mutation.log
+.mutation-bak.json
