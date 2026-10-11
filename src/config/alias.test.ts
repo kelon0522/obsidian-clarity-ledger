@@ -1079,3 +1079,60 @@ function listTestFiles(): string[] {
   walk('src')
   return out
 }
+
+/* ==================================================================
+ * Node 版本要求
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * **「本机能跑」不等于「别人能跑」——尤其是换 Node 版本时。**
+ *
+ * 2026-10-11 首次推 GitHub，CI 连续红了两次：
+ *
+ * 1. `jsdom` 根本没在 package.json 里声明（本机恰好装上了）
+ * 2. 声明之后仍然红：
+ *    ```
+ *    TypeError: webidl.util.markAsUncloneable is not a function
+ *    ```
+ *    jsdom 30 的 `engines` 是 `^22.22.2 || ^24.15.0 || >=26`，
+ *    而 CI 配的是 Node 20。**本机是 22.22.2，一切正常。**
+ *
+ * 第二条尤其值得记：依赖的 `engines` 是一道**本机满足得了、
+ * 换台机器/换个 CI 镜像就满足不了**的隐形门槛。
+ * 它不会在开发时提示你，只在别人 clone 之后炸。 */
+
+describe('Node 版本要求', () => {
+  const p = () => JSON.parse(read('package.json'))
+
+  it('package.json 声明了 node >= 22.22（jsdom 30 的硬要求）', () => {
+    expect(
+      p().engines?.node,
+      '没有 engines.node → 别人用 Node 20 装完才发现跑不起来，报错还指向 jsdom 内部',
+    ).toBeTruthy()
+    expect(p().engines.node).toMatch(/>=\s*22/)
+  })
+
+  it('CI 与 release 的 node 版本一致（否则会出现「CI 绿的、Release 红的」）', () => {
+    const ci = read('.github/workflows/ci.yml')
+    const rel = read('.github/workflows/release.yml')
+    const grab = (s: string) => s.match(/node-version:\s*(\S+)/)?.[1]
+    expect(grab(ci), 'ci.yml 没配 node-version').toBeTruthy()
+    expect(grab(rel), 'release.yml 没配 node-version').toBeTruthy()
+    /* 两边不一致时，两边都不会说明原因 —— 只有某一次发版失败才会发现。 */
+    expect(grab(ci), 'ci.yml 与 release.yml 的 node-version 不一致').toBe(grab(rel))
+  })
+
+  /* CI 配的版本必须**满足** package.json 声明的下限，
+     否则等于「声明了要求但自己违反」。 */
+  it('CI 的 node 版本满足 engines 下限', () => {
+    const ci = read('.github/workflows/ci.yml')
+    const ver = ci.match(/node-version:\s*(\d+)/)?.[1]
+    const min = p().engines.node.match(/>=\s*(\d+)/)?.[1]
+    expect(ver, 'ci.yml 的 node-version 不是数字').toBeTruthy()
+    expect(
+      Number(ver),
+      `ci.yml 用 Node ${ver}，但 package.json 要求 >= ${min}（jsdom 30 会报markAsUncloneable）`,
+    ).toBeGreaterThanOrEqual(Number(min))
+  })
+})

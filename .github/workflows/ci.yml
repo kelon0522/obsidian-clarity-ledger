@@ -47,7 +47,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # **必须是 22，不能是 20。**
+          # jsdom 30（测试用的 DOM 环境）要求 node ^22.22 || ^24.15 || >=26，
+          # 在 Node 20 上直接报 `webidl.util.markAsUncloneable is not a function`。
+          #
+          # 更值得记的是：**这错误只在 CI 上出现**，本机是 22.22.2 一切正常。
+          # 「本机能跑」不等于「别人能跑」—— 依赖的 engines 字段是一道
+          # 本机满足得了、换台机器就满足不了的隐形门槛。
+          node-version: 22
           # 要提交 package-lock.json，否则 CI 和每个人的依赖版本都不一样
           cache: npm
 

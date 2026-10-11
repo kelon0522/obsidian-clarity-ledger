@@ -9,6 +9,9 @@
     "daily-planning",
     "markdown"
   ],
+  "engines": {
+    "node": ">=22.22.0"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs watch",
     "dev:css": "vite build --config vite.css.config.mts --watch",

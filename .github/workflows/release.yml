@@ -21,7 +21,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 与 ci.yml **保持一致** —— 两边版本不同就会出现
+          # 「CI 绿的、Release 红的」，或者反过来，而两边都不会说明原因。
+          # 为什么必须是 22：jsdom 30 要求 node ^22.22 || ^24.15 || >=26。
+          node-version: 22
 
       - run: npm ci
 
