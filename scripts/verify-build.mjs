@@ -136,6 +136,28 @@ if (existsSync(MAIN)) {
   ok('main.js 没有 React.createElement（说明 JSX 走的是 automatic）', !raw.includes('React.createElement'))
   ok('main.js 用了 jsx() 运行时', /\bjsx\(|jsx_runtime|jsxs/.test(raw))
 
+  /* 社区目录审核会扫产物，而这条Error 只有在产物上才看得见：
+   *   Code creates script elements at runtime / createElement('script')
+   * 那是 **React 19 的「资源提升」**（Resource Hoisting）——
+   * react-dom 内部为预加载创建 <script> 标签。
+   * 官方论坛有两位开发者栽在同一处（各 3 处），降react 到 18 即解。
+   *
+   * **源码里一处都没有**，所以只在 `alias.test.ts` 里查源码是查不出来的
+   * —— 必须查产物。
+   *
+   * 而它**不能**放在测试里：CI 是 npm ci → npm test → npm run build，
+   * 测试跑的时候 main.js 是上一版遗留的。本机习惯先 build 再 test
+   * 所以看不出来 —— 又是一次「本机绿、CI 红」。 */
+  const scriptHits = [...raw.matchAll(/createElement\(\s*["']script["']/g)]
+  ok(
+    '产物里没有 createElement("script")',
+    scriptHits.length === 0,
+    scriptHits.length
+      ? `有 ${scriptHits.length} 处 —— 社区目录会判「Code obfuscation」（Error，不过审）。` +
+          `源码里没有的话就是 React 19 的资源提升，把 react 降到 18。`
+      : ''
+  )
+
   const kb = Math.round(statSync(MAIN).size / 1024)
   ok('main.js 体积合理（100–800 KB，含 React）', kb > 100 && kb < 800, `${kb} KB`)
 

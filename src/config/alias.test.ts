@@ -1686,18 +1686,17 @@ describe('lock 与 package.json 的一致性', () => {
     }
   })
 
-  /* 产物自检：这一条最直接 —— 不看声明、不看 lock，
-     直接检查**用户实际会装到的东西**。
-     之前那条「源码不含 createElement('script')」查的是源码，
-     而审核扫的是产物 —— 两者不是一回事。*/
-  it('构建产物里没有 createElement("script")（审核扫的就是它）', () => {
-    const built = readFileSync(join(here, 'main.js'), 'utf8')
-    const hits = [...built.matchAll(/createElement\(\s*["']script["']/g)]
-    expect(
-      hits.map((_, i) => `第 ${i + 1} 处`),
-      `产物里有 ${hits.length} 处 createElement("script") —— ` +
-        `社区目录会判「Code creates script elements at runtime」（Error，不过审）。\n` +
-        `如果源码里确实没有，那多半是 React 19 的资源提升，把 react 降到 18 即可。`,
-    ).toHaveLength(0)
-  })
+  /* ⚠️ **这里刻意不检查 `main.js`**。
+     社区目录审核扫的是构建产物，所以「产物里有没有
+     `createElement('script')`」是最直接的判据 ——
+     但**这条断言不能放在测试里**：
+
+     CI 的步骤是 `npm ci` → `npm test` → `npm run build`，
+     跑测试的时候 `main.js` 是**上一版遗留的**（或压根没有）。
+     本机之所以能过，只因为我习惯先 build 再 test ——
+     **本机绿 ≠ CI 绿**，正是这个项目今天栽了五次的那类问题。
+
+     产物检查归 `scripts/verify-build.mjs`（它本来就在 build 之后跑）。
+     这里只守**输入**：lock 与 package.json 一致、react 是 18。
+     输入对了，产物自然对。*/
 })
