@@ -56,7 +56,7 @@ Obsidian 原生就能渲染那个表格。详见[桌面端 / 移动端](#桌面�
 
 ### 手动安装（当前可用）
 
-1. 从 [Releases](https://github.com/kelon/obsidian-clarity-ledger/releases) 下载最新版里的
+1. 从 [Releases](https://github.com/kelon0522/obsidian-clarity-ledger/releases) 下载最新版里的
    `main.js`、`manifest.json`、`styles.css` 三个文件
 2. 放进 `<你的 vault>/.obsidian/plugins/clarity-ledger/`（没有就自己建这个目录）
 3. 重启 Obsidian，设置 → 第三方插件 → 关闭安全模式 → 启用 **Clarity Ledger**

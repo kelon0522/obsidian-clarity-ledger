@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Daily clarity planner based on the T-grid note method. Todos are the master table; the plan and actual tracks are two projections of it. Data lives as Markdown in your vault, so it is fully searchable.",
-  "author": "kelon",
-  "authorUrl": "https://github.com/kelon",
+  "author": "kelon0522",
+  "authorUrl": "https://github.com/kelon0522",
   "isDesktopOnly": true
 }

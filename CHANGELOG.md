@@ -56,5 +56,5 @@
 - 支持改存储目录与文件名模板，改完自动迁移已有文件（冲突一律跳过不覆盖）
 - 尊重用户在 Obsidian 里的手改：写回前比对 mtime，改过就以用户的为准
 
-[未发布]: https://github.com/kelon/obsidian-clarity-ledger/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/kelon/obsidian-clarity-ledger/releases/tag/0.1.0
+[未发布]: https://github.com/kelon0522/obsidian-clarity-ledger/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kelon0522/obsidian-clarity-ledger/releases/tag/0.1.0

@@ -63,7 +63,7 @@ duration.
 ### Manual install (currently available)
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest
-   [Release](https://github.com/kelon/obsidian-clarity-ledger/releases)
+   [Release](https://github.com/kelon0522/obsidian-clarity-ledger/releases)
 2. Put them in `<your vault>/.obsidian/plugins/clarity-ledger/` (create that folder if needed)
 3. Restart the app, then go to Settings → Community plugins → turn off Safe mode → enable
    **Clarity Ledger**
