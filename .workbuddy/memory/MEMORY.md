@@ -52,6 +52,31 @@
   且只对**按平台分发二进制**的包生效（esbuild / rollup / lightningcss /
   @tailwindcss/oxide）—— 普通可选依赖（fsevents 只在 mac）不能加进 lock。
 
+## 审核报「lockfile is out of date」= lock 不是 npm 写的（2026-10-11 定论）
+- 判定方式：审核器**跑一遍 `npm install` 再看 lock 有没有变**。
+  只要 lock 不是 npm 亲手序列化的，就报过期 ——
+  **哪怕 JSON 语义完全一样、`npm ci` 能装、CI 全绿**。
+- 本次真根因：`scripts/fix-lock-optional.mjs` 用
+  `cur.resolved = ...; cur.integrity = ...` **就地补字段**，
+  属性被追加到条目末尾。npm 的规范顺序是
+  `version, resolved, integrity, dev, license, dependencies, engines`。
+- 完整 `npm install` 重写 = **2035 增 / 2035 删、纯换字段顺序**。
+- **以后 `npm run lock:fix` 跑完，必须再让 npm 完整重写一次 lock 才算完。**
+- 自检方法（不依赖审核器）：干净目录 `npm install --package-lock-only`
+  后 `cmp` 与仓库里的 lock —— 必须逐字节一致。
+
+## 官方 lint 插件可以本地跑（别再靠猜）
+- `eslint-plugin-obsidianmd`（Obsidian 官方，0.4.2）就是审核的那套规则。
+  隔离目录装 `eslint@9 + 插件 + typescript-eslint@8`，
+  在**项目目录内**用 `--config <外部配置>` 跑（配置放项目外 ESLint 会拒）。
+- 两条**之前的误判**已纠正：
+  - `prefer-create-el` 不是「把 `createEl` 认成 `document.createElement`」，
+    规则原文是 `Use 'containerEl.createDiv(...)' instead of 'containerEl.createEl('div', ...)'`
+    —— **要求用具体 helper**（createDiv / createSpan）。SettingsTab 里那段注释是错的。
+  - `no-global-this` **连 `global` 一起报**（文案提示从 'globalThis' 变成 'global'），
+    所以「`globalThis` 改写成 `global` 绕开规则」这招**无效**。
+- 审核器似乎**跳过 `*.test.tsx`**（报告里从不出现测试文件的位置）。
+
 ## 工具链速查
 - 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防CJS/循环依赖雷区）。
 - 测试：`npm test`（225 用例）；`npm run mutation`（18 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
