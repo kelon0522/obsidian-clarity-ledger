@@ -176,6 +176,7 @@ Methodology from *Cognitive Awakening* by Zhou Ling.
 | File | What it's for |
 |---|---|
 | [README.zh-cn.md](README.zh-cn.md) | Chinese version of this document |
+| [上架清单.md](上架清单.md) | **Step-by-step release + community submission guide** (in Chinese) |
 | [CHANGELOG.md](CHANGELOG.md) | Changes users can actually notice |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, and this project's conventions |
 | [手测清单.md](手测清单.md) | Manual test checklist — run it after changing core logic |

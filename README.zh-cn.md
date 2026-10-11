@@ -160,7 +160,8 @@ MIT，见 [LICENSE](LICENSE)。
 
 | 文件 | 干什么用 |
 |---|---|
-| [README.md](README.md) | 英文版本文档 |
+| [README.md](README.md) | 英文版本档 |
+| [上架清单.md](上架清单.md) | **发首个 Release + 提交社区目录的完整步骤**（照着做即可） |
+| [手测清单.md](手测清单.md) | 真机手动验证清单，改核心逻辑后过一遍 |
 | [CHANGELOG.md](CHANGELOG.md) | 用户能感知到的变化 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 怎么参与开发、这个项目的代码约定 |
-| [手测清单.md](手测清单.md) | 真机手动验证清单，改核心逻辑后过一遍 |
