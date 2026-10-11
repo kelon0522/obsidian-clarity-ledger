@@ -1,10 +1,12 @@
 # Clarity Ledger · 项目长期笔记
 
 ## 项目身份
-- 名称：Clarity Ledger（仓库 `obsidian-clarity-ledger`，插件 id `clarity-ledger`）
+- 名称：Clarity Ledger（仓库 `kelon0522/obsidian-clarity-ledger`，插件 id `clarity-ledger`）
 - 定位：《认知觉醒》工字格笔记法的 Obsidian 桌面插件 —— 待办为主表，计划与实际是它的两个投影，写入 vault 的 Markdown（默认目录 `清晰力/`）。
 - 数据完全落 vault，无网络请求，移动端只能读 md（`isDesktopOnly: true`）。
 - 桌面/Web 双版本：Web 版规则一致，在另一仓库维护。
+- **远端已建好并推送**（2026-10-11）：public，默认分支 `main`，CI 连续绿。
+  本地分支也已从 `master` 改名为 `main`。
 
 ## 上架资源状态（2026-10-10 已补齐）
 - `icon.png`：100×100 PNG RGBA，17.6 KB（靛蓝账本 + 工字格 + 橙色行动块）。社区列表图标。
@@ -31,27 +33,35 @@
 - ⚠️ **别给 `package-lock.json` 加 `-text`** —— 加了再跑 `--renormalize` 会丢条目，
   连带把 node_modules 的包删掉。教训已写进 `.gitattributes` 注释。
 
-## lock 的两类坏条目（`npm run lock:fix`）
+## lock 的三类坏条目（`npm run lock:fix` 全都处理）
 1. **连 `version` 都没有**（空壳）—— 22 个 esbuild 平台二进制。
    症状：`npm ci` 报 `TypeError: Invalid Version`。
 2. **有 `version` 但缺 `resolved`/`integrity`** —— 如 `@csstools/css-tokenizer`
    （npm 要解析 peer 元数据才写得全）。症状：`npm ci` 报 `Missing: xxx from lock file`。
+3. **缺整条平台条目**（条目根本不在 lock 里）—— 如 `lightningcss` 声明了 11 个平台，
+   lock 里只有 `lightningcss-win32-x64-msvc`。**本机完全不可见**（装的是本机平台那份），
+   CI 跑 Ubuntu 才炸：`Cannot find module '../lightningcss.linux-x64-gnu.node'`。
 
-- 判据不能只看 `!v.version`，**两类都要处理**。
-- 情况 B 必须**就地补字段**、不能整条替换 —— 条目身上有 `peer: true` 等字段。
-- 本次补了 130 个条目。
+- 1 和 2 是「条目在但字段缺」，3 是「条目根本不在」——
+  判据不能只看 `!v.version`，三类都要处理。
+- 情况 2 必须**就地补字段**、不能整条替换 —— 条目身上有 `peer: true` 等字段。
+- 本次累计补了 151 个条目（21 + 130）。
 - **本地 `npm install` 会悄悄把 lock 补对** → 「本地好好的、CI 挂了」，
   所以要在干净目录单独验 `npm ci`。
+- `scripts/alias.test.ts` 里有 3 条断言守着（平台齐全 / resolved 完整 / os+cpu 字段），
+  且只对**按平台分发二进制**的包生效（esbuild / rollup / lightningcss /
+  @tailwindcss/oxide）—— 普通可选依赖（fsevents 只在 mac）不能加进 lock。
 
 ## 工具链速查
 - 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防CJS/循环依赖雷区）。
-- 测试：`npm test`（215 用例）；`npm run mutation`（18 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+- 测试：`npm test`（225 用例）；`npm run mutation`（18 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
 - `npm run check:bat`：install.bat 的行尾/编码/BOM 五条断言。
 - **测试与变异测试已改为 node 驱动**（`scripts/test.mjs` / `scripts/mutation.mjs`），不再依赖 bash；
   `run-tests.sh` / `mutation.sh` 降级为回退路径，node 拿不到子进程输出时自动落到它们。
 - `npm run lock:fix`：补 lock 的两类坏条目。
 - 发版：`npm version patch` → `git push --tags`。
 - CI：`.github/workflows/ci.yml`（PR/push 跑 测试→构建→产物自检→上架资源+图标尺寸检查）。
+  **Node 22 + actions v5，两个 workflow 必须一致**（不一致就是「CI 绿的、Release 红的」）。
 
 ## 社区目录的显示机制（提 PR 前必看）
 - **列表页与详情页顶部那段描述 = `manifest.json` 的 `description`**。
@@ -89,6 +99,28 @@
 - `npm install` 会挂在 esbuild 的 postinstall（同样是 spawn 问题），而且很慢（7 分钟起）。
   要生成 lock 用 `npm install --package-lock-only`，再用 `npm run lock:fix` 补全。
 - `grep -c $'\r$'` 在 Git Bash 下会误报行尾（自动转换）—— **验行尾必须用字节级检查**。
+- **git push 极不稳**：代理间歇性 502 / schannel 断连 / Empty reply。
+  但 `gh` 的 API 通路稳定 → 推不上去时用 **Git API**
+  （blobs → trees → commits → refs）绕过 git 传输层。
+  ⚠️ API 写入的是 CRLF 而 git 期望 LF，之后要
+  `git reset --soft origin/main` + `git checkout -- .` + 提交一次行尾规范化。
+- `node -e "..."` 里写正则要小心：反斜杠会被 shell 吃掉
+  （`\\s*(\\S+)` → `/s*(/S+)/`）。改含正则的代码别走脚本字符串替换。
+- 用 heredoc 往 `.ts` 里追加注释时，**注释里不能出现块注释的结束符** ——
+  会提前闭合，后面的代码被当代码解析，报一个位置完全对不上的错。
+
+## 「本机绿的、CI 红的」——四道隐形门槛（都踩过）
+1. **依赖没在 package.json 里声明**，只是某次 `npm install` 恰好装上了
+   → **本机是唯一能跑通的环境**。
+2. **依赖的 `engines`**：本机 Node 22 满足、CI 的 Node 20 不满足
+   → 报错指向依赖内部，看不出是版本问题。已在两个 workflow 统一到 Node 22
+   并给 package.json 补 `engines`。
+3. **lock 缺平台二进制条目**：本机装的是本机平台那份，CI 跑 Ubuntu 就装不到
+   → `Cannot find module '../xxx.linux-x64-gnu.node'`。见「lock 的三类坏条目」。
+4. **workflow 的 `branches:` 写错分支名** → 不报错、不警告，**只是永远不触发**。
+
+判断这类问题最快的办法是**先推上去让 CI 跑一遍** ——
+本地再全绿也只有一台机器的信息量。
 
 ## styles.css 的作用域纪律（v0.1.0 修过一次真事故）
 - `styles.css` 是**整个 vault 全局加载**的 —— 用户日记、主题、其他插件都吃这份 CSS。
