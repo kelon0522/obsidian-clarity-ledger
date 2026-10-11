@@ -1,22 +1,22 @@
 # Clarity Ledger
 
-《认知觉醒》工字格笔记法的 Obsidian 实现。每天一个 Markdown 文件，
-待办、计划、实际三栏联动 —— **数据存在你的 vault 里**，能被全文搜索、能 git、能跟着同步走。
+English | [中文](./README.zh-cn.md)
 
-![界面截图](screenshot.png)
+Daily clarity planner based on the **T-grid note method** (工字格笔记法) from the book
+*Cognitive Awakening* by Zhou Ling. One Markdown file per day, with three linked columns —
+**your data stays in your vault**, so it's searchable, git-friendly, and follows whatever sync
+setup you already use.
 
-**桌面端插件，手机装不了。** 手机上直接读 vault 里的 Markdown 就够了，
-Obsidian 原生就能渲染那个表格。详见[桌面端 / 移动端](#桌面端--移动端)。
+![Screenshot](screenshot.png)
 
-> English summary: A daily planner for Obsidian based on the "T-shaped notes"
-> method from *Cognitive Awakening*. Todos are the master table; the plan and
-> actual tracks are two projections of it. Everything is stored as plain
-> Markdown in your vault — searchable, git-friendly, and synced by whatever
-> sync setup you already use. Desktop only.
+**Desktop only — cannot be installed on mobile.** On a phone you can just read the Markdown
+files in your vault; the app renders that table natively. See
+[Desktop / Mobile](#desktop--mobile).
 
-## 为什么数据是 Markdown 而不是数据库
+## Why Markdown instead of a database
 
-插件把每天的规划写成一个普通的 md 文件，放在你指定的目录下（默认 `清晰力/`）：
+The plugin writes each day's plan as an ordinary md file in a folder you choose
+(default `清晰力/`):
 
 ```markdown
 # 2026-10-10
@@ -32,138 +32,150 @@ Obsidian 原生就能渲染那个表格。详见[桌面端 / 移动端](#桌面�
 昨天把复习时间放太靠后……
 ```
 
-这意味着：
+This means:
 
-- **可以在 Obsidian 里直接手改**。插件认得出来，写回前会比对mtime，
-  判定为外部修改就以你的为准，不会覆盖。
-- **可以全文搜索**。任务名、复盘内容都在普通 md 里，Ctrl+Shift+F 能搜到。
-- **可以用 git 管起来**，也能跟着你的同步方案走。
+- **You can edit it by hand inside the app.** The plugin notices: it compares mtime before
+  writing back and treats a file you changed yourself as authoritative — it never overwrites it.
+- **Everything is searchable.** Task names and review notes live in plain md, so
+  `Ctrl+Shift+F` finds them.
+- **You can put it under git**, and it rides along with your existing sync setup.
 
-## 三栏怎么联动
+## How the three columns work together
 
-| 操作 | 结果 |
+| Action | Result |
 |---|---|
-| 待办拖到计划轨的某个时刻 | 占住那个时间段，后续排期自动顺延 |
-| 拖下沿手柄 | 改时长 |
-| 计划轨点✓ | 挪到实际轨的**同一时间段**（不是「现在」） |
-| 实际轨拖块 / 拖下沿 | 改实际开始时间与时长 |
-| 双击待办标题 | 原地改名，三处同步 |
-| 在实际轨删块 | 只清实际时间，排期保留 |
+| Drag a todo onto a time in the plan track | It occupies that slot; everything after it shifts forward |
+| Drag the bottom handle | Changes the duration |
+| Click ✓ on the plan track | Moves it to the **same time slot** on the actual track (not to "now") |
+| Drag a block / its bottom handle on the actual track | Changes the actual start time and duration |
+| Double-click a todo title | Renames it in place; all three views update |
+| Delete a block on the actual track | Clears only the actual time; the schedule stays |
 
-**待办是主表，计划与实际是它的两个投影** —— 三处渲染读的是同一份数据，
-所以不存在「改了这里忘了同步那里」。
+**Todos are the master table; the plan and actual tracks are two projections of it** — all
+three views read the same data, so there is no "changed it here, forgot to sync there".
 
-产品上刻意不做自动计时：把任务拖进「实际」这个动作本身就代表「做完了」，
-所以没有「进行中」这个状态，实际时长默认等于计划时长。
+There is deliberately **no automatic time tracking**: dragging a task into "actual" already
+means "done", so there is no "in progress" state and the actual duration defaults to the planned
+duration.
 
-## 安装
+## Installation
 
-### 手动安装（当前可用）
+### Manual install (currently available)
 
-1. 从 [Releases](https://github.com/kelon/obsidian-clarity-ledger/releases) 下载最新版里的
-   `main.js`、`manifest.json`、`styles.css` 三个文件
-2. 放进 `<你的 vault>/.obsidian/plugins/clarity-ledger/`（没有就自己建这个目录）
-3. 重启 Obsidian，设置 → 第三方插件 → 关闭安全模式 → 启用 **Clarity Ledger**
-4. 点左侧栏的日历图标，或者按 `Ctrl+P` 搜「打开今天的规划」
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest
+   [Release](https://github.com/kelon/obsidian-clarity-ledger/releases)
+2. Put them in `<your vault>/.obsidian/plugins/clarity-ledger/` (create that folder if needed)
+3. Restart the app, then go to Settings → Community plugins → turn off Safe mode → enable
+   **Clarity Ledger**
+4. Click the calendar icon in the left ribbon, or press `Ctrl+P` and search "打开今天的规划"
 
-首次启用会提示创建今天的文件。
+On first enable it offers to create today's file.
 
-### 社区插件
+### Community plugins
 
-提交社区目录审核通过后，这里会变成「设置 → 第三方插件 → 浏览，搜 `Clarity Ledger`」。
-在那之前请用上面的手动安装。
+Once the community directory submission is approved, this section will read
+"Settings → Community plugins → Browse, search for `Clarity Ledger`". Until then, use the manual
+install above.
 
-## 改存储位置 / 文件名
+## Storage location and file naming
 
-设置里可以改两样东西：**存储目录**（支持多级）和**文件名模板**。
+Settings has two options: the **storage folder** (nested paths supported) and the
+**file name template**.
 
-模板占位符：`{Y}` 四位年 · `{YY}` 两位年 · `{M}` 两位月 · `{D}` 两位日。
-比如 `{Y}年{M}月{D}日` 会把 `2026-10-10` 命名为 `2026年10月10日.md`。
+Template tokens: `{Y}` 4-digit year · `{YY}` 2-digit year · `{M}` 2-digit month · `{D}`
+2-digit day. For example `{Y}年{M}月{D}日` names `2026-10-10` as `2026年10月10日.md`.
 
-**改完离开输入框才生效**（按 Enter 也一样，按 Esc 撤销）。已有文件会**自动迁移**
-到新位置、并按新规则改名。
+**Changes apply when you leave the field** (Enter works too, Esc reverts). Existing files are
+**migrated automatically** to the new location and renamed by the new rule.
 
-迁移有三条硬规则：
+Migration has three hard rules:
 
-| 规则 | 原因 |
+| Rule | Why |
 |---|---|
-| 只搬「文件名能反解出日期」的文件 | 你在同一目录里放的别的东西（会议纪要、附件）一个都不动 |
-| 目标已有同名文件时**跳过，不覆盖** | 覆盖不可逆，跳过你能自己处理 |
-| 全部搬失败时**配置不改动** | 否则界面指向空目录，看着像数据全没了 |
+| Only files whose names resolve back to a date are moved | Anything else you keep in that folder (meeting notes, attachments) is left untouched |
+| If the destination already has a file with the same name, **skip — never overwrite** | Overwriting is irreversible; skipping leaves you something you can handle |
+| If every move fails, the **configuration is not changed** | Otherwise the UI points at an empty folder and it looks like all your data is gone |
 
-搬完会告诉你移了几个、跳过几个、失败几个。跳过的会点名是哪个文件。
-旧目录空了就提示你可以手动删 —— 插件不替你删，那是你自己建的目录。
+After the move you're told how many were moved, skipped, and failed — and skipped files are
+listed by name. If the old folder ends up empty you're told you can remove it manually; the
+plugin won't delete a folder you created yourself.
 
-## 桌面端 / 移动端
+## Desktop / Mobile
 
-插件声明 `isDesktopOnly: true`，**手机上装不了**。原因是拖拽走原生 HTML5 DnD，
-触屏不触发 `dragstart`；而且时间轴整轴 960px，手机屏幕放不下。
+The plugin declares `isDesktopOnly: true`, so **it can't be installed on a phone**. Dragging uses
+native HTML5 DnD, which touchscreens don't trigger, and the timeline is 960px wide — wider than
+a phone screen.
 
-移动端的用法是**直接读 vault 里的 Markdown** —— Obsidian 原生就能渲染那个表格，
-查阅、改复盘、补实际时间都可以，不需要插件。数据本来就跟着同步走，
-所以手机上看到的和电脑上完全一致。
+On mobile, **read the Markdown in your vault directly** — the app renders that table natively, so
+you can look things up, edit your review, and fill in actual times without the plugin. The data
+syncs with your vault, so mobile and desktop always agree.
 
-插件版是主要方向，Web 版在另一个仓库维护，两边产品规则一致。
+The plugin is the primary implementation; a Web version lives in another repository with
+identical product rules.
 
-## 隐私
+## Privacy
 
-- 数据只写入你自己的 vault，**不发出任何网络请求**，没有遥测、没有统计。
-- 不读 vault 以外的文件，不访问外部服务。
+- Data is written only into your own vault. **No network requests at all** — no telemetry, no
+  analytics.
+- No files outside the vault are read; no external services are contacted.
 
-## 开发
+## Development
 
 ```bash
 npm install
-npm run build       # 产出 main.js + styles.css，并自检
-npm test            # 202 个用例
-npm run mutation    # 变异测试：注入 15 个错误，确认断言还活着
+npm run build       # produces main.js + styles.css, then self-checks them
+npm test            # 206 test cases
+npm run mutation    # mutation testing: injects 17 bugs to prove the assertions still bite
 ```
 
-`npm test` / `npm run mutation` 都是**跨平台**的：走 node 驱动，没装 Git Bash 的
-Windows 机器也能跑（早先版本直接依赖 bash，等于把 Windows 贡献者挡在门外）。
+`npm test` and `npm run mutation` are **cross-platform**: driven by node, and they run on Windows
+even without Git Bash (earlier versions depended on bash outright, which shut Windows
+contributors out).
 
-想改代码的话看 [CONTRIBUTING.md](CONTRIBUTING.md)，里面讲了这个项目的代码约定。
-开发时建议装 [Hot-Reload 插件](https://github.com/pjeby/hot-reload)，`Ctrl+R` 重新加载。
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the code conventions of this project. For iterating on
+the plugin, install [Hot-Reload](https://github.com/pjeby/hot-reload) and press `Ctrl+R`.
 
-构建产物自检会**真的 `require` 一遍 main.js** ——「esbuild 退出码 0」不等于
-「Obsidian 能加载」，引用错、循环依赖、CJS 包装坏了都要 require 一次才暴露。
-自检里还包含了社区目录的机器校验规则（命名规范、description 的收尾标点等），
-把审核会打回的问题提前到本地。
+The build self-check **actually `require`s the built main.js** — "esbuild exited 0" does not mean
+"the app can load it". Bad references, circular imports, and broken CJS wrapping only surface when
+the module is loaded. The check also encodes the community directory's machine validation rules
+(naming, description punctuation, and so on), so rejections get caught locally instead of in review.
 
-`npm run mutation` 是这个项目最有价值的一条命令：**「测试全绿」不等于「测试有效」**。
-断言可能匹配到注释而不是代码（这个项目栽过），也可能被子串匹配绕过。
-这个脚本逐个注入已知错误，确认对应断言会红 —— 改代码后跑一遍，能发现
-「我以为在测的东西其实没在测」。
+`npm run mutation` is the most valuable command in this project: **"all tests pass" does not mean
+"the tests are meaningful."** An assertion can match a comment instead of code (this project has
+been bitten by that), or be bypassed by substring matching. The script injects known bugs one at a
+time and confirms the right assertion goes red — run it after changing code to catch
+"what I thought I was testing, I wasn't actually testing."
 
-## 发版
+## Releasing
 
 ```bash
-npm version patch     # 自动同步 manifest.json 与 versions.json，打不带 v 前缀的 tag
-git push --tags       # 触发 .github/workflows/release.yml，自动建 Release
+npm version patch     # syncs manifest.json + versions.json, tags without a v prefix
+git push --tags       # triggers .github/workflows/release.yml, which builds the Release
 ```
 
-Release 附件是 `main.js` + `manifest.json` + `styles.css` 三个文件。
+Release attachments are `main.js`, `manifest.json`, and `styles.css`.
 
-三条踩过一次的规则：
+Three rules learned the hard way:
 
-- **tag 必须严格等于 manifest 的 `version` 且不带 `v` 前缀** ——
-  Obsidian 按 version 找同名 tag，带 `v` 匹配不上，用户装不到更新。
-- **Release 不能是 draft** —— Obsidian 通过 API 取**已发布**的 Release 附件，
-  draft 对外不可见。流水线里已经写死 `draft: false`。
-- **`package-lock.json` 必须提交** —— 流水线用 `npm ci`，没有 lock 直接失败。
+- **The tag must exactly equal the manifest `version` and carry no `v` prefix** — the app looks
+  up a tag by version; a `v` prefix means users never receive updates.
+- **A Release must not be a draft** — the app fetches attachments from *published* Releases over
+  the API. The workflow pins `draft: false`.
+- **`package-lock.json` must be committed** — the pipeline runs `npm ci`, which fails without it.
 
-上架到社区目录只需提交一次，之后的版本更新不用再提 PR。
+Submitting to the community directory happens once; later version updates don't need another PR.
 
-## 许可
+## License
 
-MIT，见 [LICENSE](LICENSE)。
+MIT, see [LICENSE](LICENSE).
 
-方法论出处：《认知觉醒》周岭。
+Methodology from *Cognitive Awakening* by Zhou Ling.
 
-## 相关文件
+## Related files
 
-| 文件 | 干什么用 |
+| File | What it's for |
 |---|---|
-| [CHANGELOG.md](CHANGELOG.md) | 用户能感知到的变化 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 怎么参与开发、这个项目的代码约定 |
-| [手测清单.md](手测清单.md) | 真机手动验证清单（35 项），改核心逻辑后过一遍 |
+| [README.zh-cn.md](README.zh-cn.md) | Chinese version of this document |
+| [CHANGELOG.md](CHANGELOG.md) | Changes users can actually notice |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, and this project's conventions |
+| [手测清单.md](手测清单.md) | Manual test checklist — run it after changing core logic |

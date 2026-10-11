@@ -649,11 +649,18 @@ describe('存储位置可配置（不硬编码）', () => {
    * 所以文案里保留书名号没问题，结尾那个英文句点是硬要求。
    * 完整规则由 scripts/verify-build.mjs 断言，那边才是第一道门。
    */
-  it('manifest 的 description 是主理人拍板的文案，且以英文标点收尾', () => {
+  /**
+   * description 的**收尾标点**规则。
+   *
+   * 只断言「bot 认的四个标点之一」这一条机器规则，
+   * **不断言具体文案** —— 文案会随语言、随措辞迭代，
+   * 把中文关键词写死在这里，换个语言就会失败（2026-10-11 改英文时就撞上了）。
+   *
+   * 文案相关的断言在文件末尾「社区目录的多语言呈现」那一组里，
+   * 那组守的是「该有哪几项信息」，而不是「必须出现哪几个字」。
+   */
+  it('manifest 的 description 以 bot 认的英文标点收尾', () => {
     const m = JSON.parse(readFileSync(join(here, 'manifest.json'), 'utf8'))
-    expect(m.description).toContain('《认知觉醒》')
-    expect(m.description).toContain('工字格')
-    expect(m.description).toContain('每日清晰力规划')
     expect(m.description).toMatch(/[.?!)]$/)
   })
 
@@ -846,4 +853,101 @@ describe('全局样式不污染用户 vault', () => {
     /* layer 开得比关得晚 ⇒ 规则在某个 @layer 块内（危险位置） */
     expect(lastClose).toBeGreaterThan(lastLayerOpen)
   }
+})
+
+/* ==================================================================
+ * 社区目录的多语言呈现
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * 插件详情页（设置 → 第三方插件 → 点插件名）里显示两样东西：
+ *
+ * 1. **description** —— 来自 `manifest.json`。社区列表和详情页顶部都显示它，
+ *    **用户看到的每一个字都在这里**。所以它必须是目标用户读得懂的：
+ *    社区目录以国际用户为主，中文描述会让英文用户看不懂这插件做什么。
+ *
+ * 2. **README** —— **Obsidian 只读 `README.md` 这一个文件**，
+ *    渲染在详情页下方。相对链接（如 `./README.zh-cn.md`）会被 Obsidian
+ *    重写成 GitHub 仓库地址，所以点「中文」是跳到 GitHub 看中文版文件。
+ *    做法参照 Remotely Save 这个已上架插件。
+ *
+ * ## 为什么这些要断言
+ *
+ * 两条都是**改一次就永久生效、且不报错**的改动：
+ * description 换了语言没有任何测试会红；README 的切换行被误删也不会有人发现
+ * —— 直到社区审核之后才发现。
+ */
+describe('社区目录的多语言呈现', () => {
+  const manifest = () => JSON.parse(read('manifest.json'))
+  const en = () => read('README.md')
+  const zh = () => read('README.zh-cn.md')
+
+  /* ---------- description ---------- */
+
+  it('description 是英文（社区列表面向国际用户）', () => {
+    const d = manifest().description as string
+    // 中文只应该出现在书名号里（《认知觉醒》），别的地方不该有汉字
+    const han = d.match(/[\u4e00-\u9fff]/g) ?? []
+    expect(han.length).toBe(0)
+  })
+
+  /* 这几条是社区目录的机器校验规则（obsidian-releases 的 bot 检查，
+     违规直接打回）。verify-build.mjs 里也有一份，两边都要绿。*/
+  it('description 不含 bot 硬性拒绝的词', () => {
+    const d = manifest().description as string
+    expect(d).not.toMatch(/obsidian/i)
+    expect(d).not.toMatch(/this (is a )?plugin/i)
+  })
+
+  it('description 以 bot 认的四个标点之一收尾（中文句号会被打回）', () => {
+    const d = manifest().description as string
+    expect(d).toMatch(/[.?!)]$/)
+  })
+
+  it('description 不超过 250 字符', () => {
+    const d = manifest().description as string
+    expect(d.length).toBeLessThanOrEqual(250)
+  })
+
+  /* ---------- README 语言切换 ---------- */
+
+  it('README.md 顶部有语言切换行，且指向中文版', () => {
+    /* 必须是**相对路径** —— Obsidian 靠这个把它重写成 GitHub 地址。
+       写成完整 GitHub URL 也能跳转，但失去了「仓库移动后链接仍然有效」这个好处。*/
+    expect(en()).toMatch(/^English \| \[中文\]\(\.\/README\.zh-cn\.md\)$/m)
+  })
+
+  it('中文版存在，且顶部切回英文', () => {
+    expect(existsSync(join(here, 'README.zh-cn.md'))).toBe(true)
+    expect(zh()).toMatch(/^\[English\]\(\.\/README\.md\) \| 中文$/m)
+  })
+
+  /* Obsidian 详情页只读 README.md —— 主文件是中文就等于没做多语言。*/
+  it('主 README 是英文（有中文版就够了，主文件必须面向 Obsidian 渲染的那份）', () => {
+    const body = en().replace(/^[\s\S]*?\[中文\]\(\.\/README\.zh-cn\.md\)\n/m, '')
+    /* 正文里的中文允许存在（书名名、文件名、命令名），
+       所以只断言「英文单词量占优」这个粗判据 —— 目的不是精确统计，
+       而是抓「整个文件还是中文」这种大方向搞反的情况。*/
+    const han = (body.match(/[\u4e00-\u9fff]/g) ?? []).length
+    const latin = (body.match(/[A-Za-z]/g) ?? []).length
+    expect(latin).toBeGreaterThan(han)
+  })
+
+  /* 两份 README 必须各自带上截图 —— 社区列表那张图是从 README 里取的，
+     中文版少了截图，中文用户点进 GitHub 就看不到界面了。*/
+  it('两份 README 都引用了 screenshot.png', () => {
+    expect(en()).toContain('screenshot.png')
+    expect(zh()).toContain('screenshot.png')
+  })
+
+  it('两份 README 都有安装说明', () => {
+    for (const [name, body] of [
+      ['README.md', en()],
+      ['README.zh-cn.md', zh()],
+    ] as const) {
+      expect(body, `${name} 缺少安装章节`).toMatch(/^##\s+Install(ation)?|^##\s+安装/m)
+      expect(body, `${name} 缺少隐私说明`).toMatch(/^##\s+Privacy|^##\s+隐私/m)
+    }
+  })
 })

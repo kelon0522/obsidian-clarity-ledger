@@ -92,11 +92,32 @@ export const MUTATIONS = [
     expectRed: ['isDesktopOnly'],
   },
   {
+    /* description 已改为英文（社区目录以国际用户为主）。
+       这条变异守的是**收尾标点**那条规则 —— bot 只认 . ? ! ) 四个，
+       中文句号「。」不在列表里，会被判成「描述没写完」直接打回。
+
+       变异把最后的 `.` 换成中文句号，锚点跟着description 一起改过：
+       早先锚在中文的「可被全文搜索」上，description 换成英文后这条变异
+       直接**匹配不上** → 报「这个变异是假的」→
+       意味着「收尾标点」这条断言从未被验证过。
+
+       变异测试的价值就在这儿：description 改个语言，断言就悄悄失效了，
+       而所有测试依然全绿。 */
     name: 'description 改回中文句号收尾（社区 bot 会打回）',
     file: 'manifest.json',
-    from: /可被全文搜索\./,
-    to: '可被全文搜索。',
+    from: /so it is fully searchable\./,
+    to: 'so it is fully searchable。',
     expectRed: ['英文标点收尾'],
+  },
+  {
+    /* 第二条：description 里出现 "Obsidian" 也会被 bot 打回。
+       规则见 scripts/verify-build.mjs —— 中文描述时这条很容易犯，
+       改英文之后反而要小心别顺手写进去。*/
+    name: 'description 里混入 "Obsidian"（bot 硬性拒绝）',
+    file: 'manifest.json',
+    from: /Daily clarity planner/,
+    to: 'Obsidian clarity planner',
+    expectRed: ['description 不含'],
   },
   {
     name: 'tsconfig 恢复双路径（又变回跨仓库引用）',

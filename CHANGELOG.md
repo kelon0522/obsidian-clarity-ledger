@@ -28,6 +28,12 @@
 
 ### 其他
 
+- 插件描述（manifest `description`）改为英文：社区目录以国际用户为主，
+  中文描述会让英文用户在列表里看不懂这个插件做什么。
+- README 改为英文并新增语言切换行（`English | 中文`），中文内容移到
+  `README.zh-cn.md`。**Obsidian 详情页只读 `README.md`**，所以主文件必须是英文；
+  那一行切换靠的是 Obsidian 会把 README 里的相对链接重写成 GitHub 地址，
+  点「中文」跳到 GitHub 的中文版文件。做法参照 Remotely Save。
 - 新增 `.gitattributes`：`*.bat` 强制 CRLF、`*.sh` 强制 LF，
   从根上锁住行尾（而不是靠每个人本机的 git 配置）。
 - 新增 `npm run check:bat`：检查 install.bat 的行尾、编码、BOM 等五条，
