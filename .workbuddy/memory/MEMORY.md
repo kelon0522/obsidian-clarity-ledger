@@ -44,8 +44,8 @@
   所以要在干净目录单独验 `npm ci`。
 
 ## 工具链速查
-- 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防 CJS/循环依赖雷区）。
-- 测试：`npm test`（206 用例）；`npm run mutation`（17 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+- 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防CJS/循环依赖雷区）。
+- 测试：`npm test`（215 用例）；`npm run mutation`（18 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
 - `npm run check:bat`：install.bat 的行尾/编码/BOM 五条断言。
 - **测试与变异测试已改为 node 驱动**（`scripts/test.mjs` / `scripts/mutation.mjs`），不再依赖 bash；
   `run-tests.sh` / `mutation.sh` 降级为回退路径，node 拿不到子进程输出时自动落到它们。
@@ -53,15 +53,34 @@
 - 发版：`npm version patch` → `git push --tags`。
 - CI：`.github/workflows/ci.yml`（PR/push 跑 测试→构建→产物自检→上架资源+图标尺寸检查）。
 
+## 社区目录的显示机制（提 PR 前必看）
+- **列表页与详情页顶部那段描述 = `manifest.json` 的 `description`**。
+  社区目录以国际用户为主，**必须是英文**。
+  bot 机器规则：不含 `Obsidian`/`This plugin`、以 `.`/`?`/`!`/`)` 收尾、≤250 字符。
+- **详情页只渲染 `README.md` 这一个文件**，没有「加载第二个 md」的能力。
+  多语言做法（参照已上架的 Remotely Save）：
+  - `README.md` 放**英文**（Obsidian 渲染的就是它）
+  - 另建 `README.zh-cn.md`
+  - 顶部一行 `English | [中文](./README.zh-cn.md)`
+  - **靠 Obsidian 把 README 的相对链接重写成 GitHub 地址**，所以点「中文」跳 GitHub。
+    必须写相对路径 —— 完整 URL 虽然也能跳，但仓库搬家后失效。
+
 ## 写断言时的两条纪律（都栽过）
 - **断言的 `detail` 要惰性求值**（传函数而不是字符串）。构造消息的代码本身会抛，
   而异常发生在包装之外 —— 于是那条最该抓问题的断言自己先崩了、永远绿。
   `check-bat.mjs` 第一版就栽了：对 `Set` 直接调 `.map` 抛 TypeError。
   **错误消息本身也要测。**
+- **别把「文案内容」写死进断言。** 断言里 `toContain('《认知觉醒》')` 这种，
+  改文案/换语言就失败。拆成两层：
+  **机器规则**（不随内容变：标点、长度、敏感词）+ **信息完整性**（该有哪几项，不写具体字）。
+  改了 `manifest.description` 就撞上了这条。
 - **「测试报错但一条用例都没失败」通常是 `node_modules` 缺包**，不是测试坏了。
   npm 中途被中断会留下「旧包删了、新的没装完」的半成品，
   vitest 把它记成 unhandled error、用例计数不受影响。
   修：`npm install --no-save --ignore-scripts <缺失包名>`。
+- **改文案后一定要跑 `npm run mutation`** —— 变异常锚在文案的具体文字上，
+  换文案后匹配不上 → 报「这个变异是假的」→ 那条断言**从未被验证过**，
+  而所有测试依然全绿。
 
 ## 这台机器的环境限制（会误导判断）
 - **node 里的 `spawnSync` 拿不到子进程输出**：报 `EBUSY`，`status: null`、`stdout: undefined`。
