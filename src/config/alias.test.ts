@@ -1797,3 +1797,130 @@ describe('lock 能被干净环境安装', () => {
     expect(lock().version, 'lock 的 version 字段与 package.json 不一致').toBe(p.version)
   })
 })
+
+/* ==================================================================
+ * peer 依赖配对
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * 2026-10-11 社区目录第三次拒绝，又是三条 Error：
+ *
+ *   Error: The npm lockfile is out of date.
+ *   Error: Source review dependency installation failed
+ *   Error: Build verification dependency installation failed
+ *
+ * 表面看是 lock 的问题，实际根因是 **peer 依赖冲突**：
+ *
+ * | 包 | 要求 |
+ * |---|---|
+ * | vitest 2.1.9 | vite **^5.0.0** |
+ * | 项目直接依赖| vite ^6.0.5 |
+ *
+ * npm 自己在日志里给了警告，**但当时没人看**：
+ *
+ *   npm warn ERESOLVE overriding peer dependency
+ *   npm warn While resolving: @vitest/mocker@2.1.9
+ *   npm warn Found: vite@6.4.4
+ *
+ * 本机 npm 只警告照常装完，**CI 也绿**；
+ * 而社区目录用更严格的模式 → 直接失败。
+ *
+ * ## 为什么单列一组
+ *
+ * 「本机 npm 装成功」「CI 绿」「lock 与 package.json 一致」
+ * 三件事**都不能证明** peer 依赖是干净的 ——
+ * 那行 ERESOLVE 警告就摆在日志里，只是没人读。
+ *
+ * 所以把配对关系显式断言出来：
+ * **依赖 A 要求的版本区间，必须覆盖依赖 B 实际装的版本。**
+ */
+describe('peer 依赖配对', () => {
+  const lock = () => JSON.parse(read('package-lock.json'))
+
+  /** 极简区间判定：支持 ^ / ~ / >= / 精确 / || 组合 */
+  function inRange(version: string, range: string): boolean {
+    const v = version.split('.').map(Number)
+    return range.split('||').some((clause) => {
+      const c = clause.trim()
+      // 形如 "^1.2.3" 或 ">=2.0.0"
+      const m = c.match(/^([\^~]|[><]=?)?\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+      if (!m) return true // 认不出来的写法放行，别因为解析不了就误报
+      const op = m[1] ?? ''
+      const t = [Number(m[2]), Number(m[3] ?? 0), Number(m[4] ?? 0)]
+      switch (op) {
+        case '^':
+          if (t[0] > 0) return v[0] === t[0]
+          if (t[1] > 0) return v[0] === 0 && v[1] === t[1]
+          return v[0] === 0 && v[1] === 0 && v[2] === t[2]
+        case '~':
+          return v[0] === t[0] && v[1] === t[1]
+        case '>':
+          return v[0] > t[0] || (v[0] === t[0] && v[1] >= t[1])
+        case '>=':
+          return v[0] > t[0] || (v[0] === t[0] && v[1] >= t[1])
+        case '<':
+          return v[0] < t[0]
+        case '<=':
+          return v[0] < t[0] || (v[0] === t[0] && v[1] <= t[1])
+        default:
+          return v[0] === t[0] && v[1] === t[1] && v[2] === t[2]
+      }
+    })
+  }
+
+  /* vite 与 vitest 必须同代 —— 这是本项目实际踩到的那一对。
+     不用泛泛地遍历所有 peer 依赖：vite 的版本区间在不同包之间
+     差异很大，误报会让人懒得看。锁定「已知要配对」的那几对。 */
+  const MUST_MATCH: Array<{ holder: string; peer: string; why: string }> = [
+    { holder: 'vitest', peer: 'vite', why: 'vitest 2 只支持 vite 5；配 6 会触发 ERESOLVE' },
+  ]
+
+  for (const { holder, peer, why } of MUST_MATCH) {
+    it(`${holder} 与 ${peer} 的版本要兼容（${why}）`, () => {
+      const l = lock()
+      const h = l.packages[`node_modules/${holder}`]
+      expect(h?.version, `lock 里没有 ${holder}`).toBeTruthy()
+      const range = h.dependencies?.[peer]
+      expect(range, `${holder} 没有声明对 ${peer} 的依赖区间`).toBeTruthy()
+
+      /*实际解析到的版本：优先取顶层（npm 会尽量提升到顶层），
+         没有就用 holder 自己嵌套的那份。*/
+      const top = l.packages[`node_modules/${peer}`]?.version
+      const nested = l.packages[`node_modules/${holder}/node_modules/${peer}`]?.version
+      const actual = top ?? nested
+      expect(actual, `找不到${peer} 的实际版本`).toBeTruthy()
+
+      expect(
+        inRange(actual as string, range),
+        `${holder}@${h.version} 要求 ${peer} ${range}，` +
+          `但 lock 解析出的是 ${actual}。\n` +
+          `  → npm 只会在日志里留一行 ERESOLVE 警告，本机和 CI 都是绿的，` +
+          `    但社区目录用严格模式会直接失败（报「lockfile is out of date」）。`,
+      ).toBe(true)
+    })
+  }
+
+  /* 反向也查一遍：顶层版本要满足所有依赖者的要求。
+     这次是「顶层 6太新」，也可能是「顶层太旧装不了新的」——
+     两种情况的表现都是 ERESOLVE。 */
+  it('顶层 vite 的版本被所有依赖者接受', () => {
+    const l = lock()
+    const top = l.packages['node_modules/vite']?.version
+    expect(top, 'lock 里没有顶层 vite').toBeTruthy()
+    const bad: string[] = []
+
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      if (path === '' || path === 'node_modules/vite') continue
+      const deps = entry?.dependencies as Record<string, string> | undefined
+      const range = deps?.vite
+      if (!range) continue
+      /* 这一项装的是嵌套版本（它有自己的 vite），那就跟顶层无关。*/
+      if (l.packages[`${path}/node_modules/vite`]) continue
+      if (!inRange(top as string, range)) {
+        bad.push(`${path.replace('node_modules/', '')}@${entry?.version} 要求 vite ${range}`)
+      }
+    }
+    expect(bad, `这些包不接受顶层 vite ${top}：\n${bad.join('\n')}`).toHaveLength(0)
+  })
+})

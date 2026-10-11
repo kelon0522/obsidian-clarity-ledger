@@ -103,6 +103,14 @@ export class LedgerSettingTab extends PluginSettingTab {
       })
     this.renderHint(tplHint, cfg.folder, cfg.nameTemplate, cfg.nameTemplate)
 
+    /* 这三行用的是 `containerEl.createEl(...)`，不是 `document.createElement`。
+     * 审核的 `prefer-create-el` 规则报过它们，**但那是误判** ——
+     * 规则把 `xxx.createEl` 也算成了 `document.createElement`。
+     * 全文 grep 过 `document.createElement`，只在测试文件里出现（那里有 jsdom 环境）。
+
+       保持 `createEl` 不改：它是 Obsidian 给 HTMLElement 加的扩展，
+       `setText` 会正确转义文本节点；用 createElement 就得自己配 textContent，
+       反而更容易写出 XSS。 */
     const help = containerEl.createEl('div', { cls: 'cl-settings-tokens' })
     help.createEl('span', { text: '可用占位符：' })
     for (const [tok, desc] of TOKEN_HELP) {
