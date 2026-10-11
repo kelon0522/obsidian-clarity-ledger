@@ -1245,3 +1245,68 @@ describe('lock 的跨平台完整性', () => {
     expect(bad.slice(0, 10)).toHaveLength(0)
   })
 })
+
+/* ==================================================================
+ * owner 一致性
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * **改名/搬家时最容易漏的一类：仓库地址散落在好几个文件里。**
+ * 2026-10-11 从 kelon 迁到 kelon0522，涉及 4 个文件 6 处：
+ * manifest（社区目录真读的）、README 两个版本、CHANGELOG、LICENSE。
+ *
+ * 漏一处的后果分两种：
+ * - manifest 漏了 → **社区列表点进去作者显示还是旧名**
+ * - README 漏了 → 用户点 Releases 404
+ *
+ * 都不报错、不影响本地开发，只有上架后才看得见。
+ */
+describe('owner 与仓库地址一致', () => {
+  const p = () => JSON.parse(read('manifest.json'))
+
+  it('manifest 的 authorUrl 指向 GitHub 个人主页', () => {
+    expect(p().authorUrl, 'authorUrl 缺失或格式不对').toMatch(
+      /^https:////github/.com//[A-Za-z0-9-]+$/,
+    )
+  })
+
+  it('manifest 的 author 与 authorUrl 的用户名一致', () => {
+    const user = p().authorUrl.replace('https://github.com/', '')
+    expect(p().author, `author（${p().author}）与 authorUrl 里的用户名（${user}）不一致`).toBe(user)
+  })
+
+  /** 全仓库扫「旧的 owner」——有残留就说明有文件忘了改。 */
+  it('所有文件里的仓库地址与 authorUrl 指向同一个 owner', () => {
+    const user = p().authorUrl.replace('https://github.com/', '')
+    const repo = 'obsidian-clarity-ledger'
+
+    /* 这些文件会被社区列表、社区审核、用户点链接时读到。 */
+    const files = ['README.md', 'README.zh-cn.md', 'CHANGELOG.md', 'manifest.json']
+
+    /* 只看**指向本仓库的**链接：`github.com/<user>/<repo>`。
+       README 里还有指向第三方仓库的链接（Hot-Reload 的作者 pjeby、
+       Remotely Save 等），那些当然不该等于我们的用户名 ——
+       早先没做这个区分，断言把 pjeby 也当成「漏改的旧 owner」，
+       误报了一次。判据：用户名后面必须紧跟本仓库名。 */
+    const repoRe = new RegExp(`github\\.com/([A-Za-z0-9-]+)/${repo}(?![A-Za-z0-9-])`, 'g')
+
+    for (const f of files) {
+      const text = read(f)
+      const owners = [...text.matchAll(repoRe)].map((m) => m[1])
+      for (const o of new Set(owners)) {
+        expect(o, `${f} 里的 github.com/${o}/${repo} 与 authorUrl 的 ${user} 不一致（漏改了？）`).toBe(
+          user,
+        )
+      }
+      /* 反向：authorUrl 自己必须指向一个存在的 owner 目录 ——
+         至少确认它不是空串或占位符。 */
+      if (user) expect(p().authorUrl).toMatch(new RegExp(`^https://github\\.com/${user}/?$`))
+    }
+  })
+
+  it('LICENSE 的版权署名与 author 一致', () => {
+    const lic = read('LICENSE')
+    expect(lic, `LICENSE 里没有 ${p().author} 的署名`).toContain(`Copyright (c) 2026 ${p().author}`)
+  })
+})
