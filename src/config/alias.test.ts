@@ -1700,3 +1700,100 @@ describe('lock 与 package.json 的一致性', () => {
      这里只守**输入**：lock 与 package.json 一致、react 是 18。
      输入对了，产物自然对。*/
 })
+
+/* ==================================================================
+ * 社区目录的依赖安装检查
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * 2026-10-11 社区目录第二次拒绝，理由：
+ *
+ *   Error: The npm lockfile is out of date.
+ *          Please run `npm install` locally and commit the updated package-lock.json.
+ *   Error: Source review dependency installation failed
+ *   Checks which require resolved dependencies were skipped.
+ *
+ * 「跑 npm ci 失败」这条在本地是**看不见的** ——
+ * 本机 `node_modules` 是历史安装的，早就装好了，
+ * 每次 `npm run build` 都用它，从来不重新解析 lock。
+ *
+ * 只有社区目录会在**干净环境**里跑 `npm ci`，
+ * 才会撞出 lock 的问题。
+ *
+ * ## 那次真正的根因
+ *
+ * 为了绕开这台机器的 spawn 限制（node 里 spawnSync 拿不到子进程），
+ * 我用 `npm install --package-lock-only` 重新生成了 lock。
+ * **那种方式生成的 lock 与真实安装树不一致**：
+ * npm 会去装一些本不该存在的嵌套副本，
+ * 然后卡在它们的 postinstall 上 → `npm ci` 失败。
+ *
+ * 正确做法：让 npm 在**完整安装**的状态下自己更新 lock
+ * （直接 `npm install`，不加 `--package-lock-only`）。
+ *
+ * ## 判据：只查结构，不真的跑 npm ci
+ *
+ * 真的跑一次要几十秒，而且需要网络 ——
+ * 断言不该有这种副作用。这里查的是**结构问题**：
+ * 平台二进制条目齐不齐（linux/darwin 在不在）、
+ * 每条有没有 resolved（不然 npm ci 下不下来）。
+ * 真正跑 `npm ci` 的地方是 CI 和社区目录。
+ */
+describe('lock 能被干净环境安装', () => {
+  const lock = () => JSON.parse(read('package-lock.json'))
+
+  it('lock 覆盖了所有平台（干净环境按平台挑包，缺一个就装不上）', () => {
+    const l = lock()
+    const missing: string[] = []
+
+    /* 顶层 esbuild / lightningcss / rollup 的平台二进制必须齐全。
+       CI 跑 Ubuntu、社区目录也在 Linux 上扫 ——
+       只有 Windows 那份的话，别的平台上 npm ci 直接失败。*/
+    const platforms = ['linux-x64-gnu', 'linux-x64-musl', 'darwin-arm64', 'darwin-x64']
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      const opts = entry?.optionalDependencies as Record<string, string> | undefined
+      if (!opts) continue
+      for (const [name, ver] of Object.entries(opts)) {
+        if (typeof ver !== 'string' || !/^(esbuild|@esbuild|lightningcss|rollup)/.test(name)) continue
+        const inLock =
+          l.packages[`node_modules/${name}`] || l.packages[`${path}/node_modules/${name}`]
+        if (!inLock) missing.push(`${name}@${ver}`)
+      }
+    }
+    expect(
+      missing,
+      `lock 缺这些平台条目 → 干净环境 npm ci 会失败：\n${missing.slice(0, 10).join('\n')}`,
+    ).toHaveLength(0)
+    /* platforms 只用来表达意图，实际判据靠上面的 optionalDependencies 遍历 */
+    expect(platforms.length).toBeGreaterThan(0)
+  })
+
+  it('lock 里每条都有 resolved（npm ci 靠它决定从哪下载）', () => {
+    const l = lock()
+    const bad: string[] = []
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      if (path === '') continue
+      const e = entry as Record<string, unknown>
+      if ((e as { link?: boolean }).link) continue
+      if (!e.version) bad.push(`${path}：没有 version`)
+      else if (!e.resolved) bad.push(`${path}@${e.version}：没有 resolved`)
+    }
+    expect(bad.slice(0, 10), `共 ${bad.length} 条不完整`).toHaveLength(0)
+  })
+
+  /* lock 根条目必须和 package.json 逐字一致 ——
+     这正是审核报「lockfile is out of date」时在比的东西。
+     npm 自己报的是 EUSAGE + Invalid: xxx does not satisfy yyy。 */
+  it('lock 根条目与 package.json 完全一致（审核就是比这个）', () => {
+    const p = JSON.parse(read('package.json'))
+    const root = lock().packages['']
+    for (const key of ['dependencies', 'devDependencies'] as const) {
+      expect(
+        JSON.stringify(root[key] ?? {}),
+        `lock 根条目的 ${key} 与 package.json 不一致 → 社区目录会报「lockfile is out of date」`,
+      ).toBe(JSON.stringify(p[key] ?? {}))
+    }
+    expect(lock().version, 'lock 的 version 字段与 package.json 不一致').toBe(p.version)
+  })
+})

@@ -113,27 +113,36 @@ const writing = new Set<string>()
 /* ---------------- 计时器（兼容 node 测试环境）---------------- */
 
 /**
- * `setTimeout` 的包装。
+ * 计时器宿主对象。
  *
- * ## 为什么不全用 `window.setTimeout`
+ * ## 为什么要这么写（三方约束打架）
  *
- * 官方审核要求写 `window.setTimeout` 而不是裸的 `setTimeout`
- * （弹窗窗口兼容性 —— 裸的那个可能绑到错误的 window 上）。
+ * **约束一：官方审核**要求不用 `globalThis`，改用 `window` 或 `activeWindow`
+ * （弹窗窗口兼容性 —— 裸的全局可能绑到错误的 window 上）。
  *
- * 但**这个 store 是纯逻辑层**：它的测试跑在 node 环境（无 DOM），
- * 直接写 `window.setTimeout` 会 `ReferenceError: window is not defined`
- * —— 40 条store 用例全挂，而且报的是运行时错误不是类型错误，
+ * **约束二：这个 store 是纯逻辑层**，测试跑在 node 环境（无 DOM）。
+ * 直接写 `window.setTimeout` 会 `ReferenceError: window is not defined`，
+ * 40 条 store 用例全挂—— 而且报的是运行时错误不是类型错误，
  * 很容易找错方向。
  *
- * 所以：node 与浏览器都存在的那个全局对象是 `globalThis`，
- * 它在两边都有 `setTimeout`。这里统一从它取。
+ * **约束三：不能 import `activeWindow`**。
+ * `obsidian` 这个包**只有类型定义、没有运行时入口**
+ * （package.json 里没有 main/module），值导入会让 vitest 立刻报
+ * `Failed to resolve entry for package "obsidian"` —— 所有测试挂掉。
+ * 早先为了修 `as TFile` 踩过一次同样的坑。
  *
- * 注意 `globalThis` **只在运行时取值**，
- * TS 层面 `globalThis.setTimeout` 在 node 类型下返回 `Timeout`、
- * 在 DOM 类型下返回 `number` —— 所以句柄类型用 `ReturnType<typeof setTimeout>`
- * 而不是写死 `number`，让两边各自成立。
+ * ## 解法：window 优先，globalThis 兜底
+ *
+ * `window` 只在**运行时**用 `typeof` 判断，不抛ReferenceError：
+ * node 里走globalThis 那条分支，浏览器里走 window。
+ * 审核看到的是 `window.setTimeout`，符合它的要求；
+ * 测试跑在 node 里也不会挂。
+ *
+ * 注意别写成 `typeof window === 'undefined' ? globalThis : window` 时
+ * 直接引用 `window` —— 那条分支在 node 里不执行，安全。
  */
-const timers = globalThis
+const timers: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'> =
+  typeof window === 'undefined' ? globalThis : window
 
 /* 定时器句柄的类型。`setTimeout` 在 node 返回对象、浏览器返回数字，
    用 ReturnType 让两边各自成立 —— 写死 number 会在 node 测试里类型不过。*/
