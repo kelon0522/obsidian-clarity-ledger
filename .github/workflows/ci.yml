@@ -43,9 +43,9 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # **必须是 22，不能是 20。**
           # jsdom 30（测试用的 DOM 环境）要求 node ^22.22 || ^24.15 || >=26，

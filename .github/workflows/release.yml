@@ -17,9 +17,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 与 ci.yml **保持一致** —— 两边版本不同就会出现
           # 「CI 绿的、Release 红的」，或者反过来，而两边都不会说明原因。

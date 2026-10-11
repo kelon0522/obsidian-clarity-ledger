@@ -1132,8 +1132,23 @@ describe('Node 版本要求', () => {
     expect(ver, 'ci.yml 的 node-version 不是数字').toBeTruthy()
     expect(
       Number(ver),
-      `ci.yml 用 Node ${ver}，但 package.json 要求 >= ${min}（jsdom 30 会报markAsUncloneable）`,
+      `ci.yml 用Node ${ver}，但 package.json 要求 >= ${min}（jsdom 30 会报markAsUncloneable）`,
     ).toBeGreaterThanOrEqual(Number(min))
+  })
+
+  /* 两份 workflow 用的 action 版本要一致。
+     不一致的后果同样是「CI 绿的、Release 红的」，而且更难察觉 ——
+     因为 CI 只跑 CI 那份，release.yml 的问题要等真发版才暴露。 */
+  it('CI 与 release 用的 action 版本一致', () => {
+    const ci = read('.github/workflows/ci.yml')
+    const rel = read('.github/workflows/release.yml')
+    for (const act of ['actions/checkout', 'actions/setup-node']) {
+      const a = ci.match(new RegExp(`${act}@(v\\d+)`))?.[1]
+      const b = rel.match(new RegExp(`${act}@(v\\d+)`))?.[1]
+      expect(a, `ci.yml 里找不到 ${act}`).toBeTruthy()
+      expect(b, `release.yml 里找不到 ${act}`).toBeTruthy()
+      expect(a, `${act} 版本不一致：ci=${a} release=${b}`).toBe(b)
+    }
   })
 })
 
