@@ -28,6 +28,17 @@
 
 ### 其他
 
+- **通过 Obsidian 社区目录的自动审核**（首次提交时撞上一批问题）：
+  - 设置页标题改用 `new Setting().setHeading()`，不再直接创建 `h2`（**Error 级**）
+  - 确认弹框的警告行改用 CSS class，不再设内联 `style`（**Error 级**）
+  - store 的全部 action 标注 `this: void` —— 类型层面保证从 store 取出的函数
+    脱离对象后不会误用 `this`（一次改动覆盖 19 处调用点）
+  - 所有计时器加 `window.` 前缀（弹出窗口兼容性）
+  - `Vault.delete()` 改用 `FileManager.trashFile()`，尊重用户的「删除进回收站」设置
+  - 三处 `as TFile` 强行断言改用类型守卫
+  - 移除 `builtin-modules` 依赖，改用 Node 内置的 `module.builtinModules`
+- **新增 7 条断言**把社区目录的审核规则固化下来 ——
+  Error 级问题**不过审且不给重试**，以后改代码本地就能发现。
 - 插件描述（manifest `description`）改为英文：社区目录以国际用户为主，
   中文描述会让英文用户在列表里看不懂这个插件做什么。
 - README 改为英文并新增语言切换行（`English | 中文`），中文内容移到

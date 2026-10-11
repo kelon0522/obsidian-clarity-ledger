@@ -754,9 +754,31 @@ describe('确认弹框的答复顺序', () => {
     expect(m).toMatch(/onClose\(\)[\s\S]{0,300}settle\(false\)/)
   })
 
-  it('警告行（⚠）单独标红，不淹没在普通说明里', () => {
+  /* 警告行的样式**必须走 CSS class，不能是内联 style**。
+     社区目录的自动审核有一条 `no-static-styles-assignment`（**Error 级别，
+     不过审**）专门拦 `li.style.color = ...`。
+     而且内联样式优先级高于任何 class —— 用户换主题时压不掉，
+     class 跟着 CSS 变量走能自动适配。
+
+     断言拆成两半：
+     1. TS 侧用 addClass（不碰 style 属性）
+     2. CSS 侧那条 class 规则存在，且用变量而非写死颜色值
+     只查一边的话，另一边被改坏也发现不了。 */
+  it('警告行（⚠）用 CSS class 标红，不写内联 style', () => {
     const m = modal()
-    expect(m).toContain('text-error')
+    expect(m, '警告行应该加 cl-warn-line class').toContain("addClass('cl-warn-line')")
+    /* 内联样式赋值是审核的Error 项，明确断掉。
+       注意只查 `li` 这种元素上的 style 赋值 ——
+       `el.style` 作为 CSS 变量定义出现是另一回事（那是 styles.css 里的事）。 */
+    expect(m, '不该有 li.style.xxx = 这样的内联样式赋值').not.toMatch(/\.style\.\w+\s*=/)
+  })
+
+  it('.cl-warn-line 的颜色用 CSS 变量（跟着用户主题走，不写死）', () => {
+    const css = read('src/index.css')
+    const rule = cssRule(css, '.cl-warn-line')
+    expect(rule, 'CSS 里没有 .cl-warn-line 规则').toContain('var(--text-error)')
+    /* 写死颜色值会压不掉用户的主题配色 */
+    expect(rule, '不该写死颜色，应该用 var(--text-error)').not.toMatch(/#[0-9a-f]{3,6}\b/i)
   })
 })
 
@@ -1310,3 +1332,170 @@ describe('owner 与仓库地址一致', () => {
     expect(lic, `LICENSE 里没有 ${p().author} 的署名`).toContain(`Copyright (c) 2026 ${p().author}`)
   })
 })
+
+/* ==================================================================
+ * 社区目录的自动审核规则
+ * ==================================================================
+ *
+ * ## 为什么这组必须存在
+ *
+ * Obsidian 社区目录的**自动审核**会扫源码和构建产物，
+ * 报出的Error 级别问题**直接不过审**，而且**不给重试机会**。
+ *
+ * 2026-10-11 首次提交就撞上一批。这里固化成断言，
+ * 改代码时本地就能发现 —— 不用等提交后被退回来。
+ *
+ * ## 每条对应的审核规则
+ *
+ * | 断言 | 对应的审核项 | 级别 |
+ * |---|---|---|
+ * | 不写内联 style 赋值 | `no-static-styles-assignment` | **Error** |
+ * | 设置页标题用 setHeading() | 「统一 UI 风格」 | **Error** |
+ * | 产物不含 createElement('script') | Code obfuscation | **Error** |
+ * | 计时器带 window. 前缀 | popout 兼容性 | Warning |
+ * | 不用 as TFile | `Avoid casting to 'TFile'` | Warning |
+ * | 不用 globalThis（node 侧除外） | popout 兼容性 | Warning |
+ * | 不用 builtin-modules 包 | 依赖审查 | Warning |
+ */
+describe('社区目录的自动审核规则', () => {
+  /* ---------- Error 1：内联样式 ---------- */
+
+  it('不写内联 style 赋值（审核 Error，不过审）', () => {
+    /* 只扫 **TS/TSX 源码**，不扫构建产物 ——
+       产物里有 React 内部的代码，扫它会误报。 */
+    const offenders: string[] = []
+    for (const file of listSourceFiles()) {
+      const code = stripComments(readFileSync(join(here, file), 'utf8'))
+      for (const [i, line] of code.split('\n').entries()) {
+        /* `el.style.color = x` / `el.style.setProperty(...)`。
+           注意排除 `styles.css` 里的 CSS 变量定义（那是另一种东西），
+           所以只扫 .ts/.tsx。 */
+        if (/\.style\s*\.\s*\w+\s*=/.test(line) || /\.style\s*\.\s*setProperty\s*\(/.test(line)) {
+          offenders.push(`${file}:${i + 1}  ${line.trim().slice(0, 70)}`)
+        }
+      }
+    }
+    expect(
+      offenders,
+      `这些地方直接设了内联样式，改成 CSS class：\n${offenders.join('\n')}`,
+    ).toHaveLength(0)
+  })
+
+  /* ---------- Error 2：设置页标题 ---------- */
+
+  it('设置页标题用 setHeading() 而不是 createEl("h2")（审核 Error）', () => {
+    const code = stripComments(read('src/config/SettingsTab.ts'))
+    expect(code, '不该用 createEl("h2")，官方要求 setHeading()').not.toMatch(
+      /createEl\(\s*['"]h[1-6]['"]/,
+    )
+    expect(code, '应该有 setHeading()').toContain('setHeading()')
+  })
+
+  /* ---------- Error 3：产物里不能有动态 script ---------- */
+
+  it('构建产物不含 createElement("script")（审核 Error：代码混淆）', () => {
+    /* ⚠️ 这条**一定会有命中** —— React 内部预加载资源时会
+       `document.createElement('script')`，而 React 是打进产物里的。
+       所以判据是「**源码**里没有」，产物里出现不算问题。
+       审核器扫的是源码树，能定位到具体文件。
+
+       这也是当初误判的根源：扫产物会把 React 内部代码算到插件头上。*/
+    for (const file of listSourceFiles()) {
+      const code = readFileSync(join(here, file), 'utf8')
+      expect(
+        code,
+        `${file} 里有 createElement('script') —— 审核会判「动态注入脚本」（Error）`,
+      ).not.toMatch(/createElement\(\s*['"]script['"]/)
+      expect(code, `${file} 里有 addScriptTag`).not.toMatch(/addScriptTag/)
+    }
+  })
+
+  /* ---------- Warning：计时器 ---------- */
+
+  it('计时器用 window. 前缀（popout 兼容性）', () => {
+    const offenders: string[] = []
+    for (const file of listSourceFiles()) {
+      const code = stripComments(readFileSync(join(here, file), 'utf8'))
+      for (const [i, line] of code.split('\n').entries()) {
+        /* 匹配裸调用：前面不是 `.`、不是 `window.`，也不是 `typeof` */
+        if (/(?<![\w.])(?<!window\.)(setTimeout|clearTimeout|setInterval|clearInterval)\s*\(/.test(line)) {
+          offenders.push(`${file}:${i + 1}  ${line.trim().slice(0, 70)}`)
+        }
+      }
+    }
+    expect(
+      offenders,
+      `这些计时器缺 window. 前缀：\n${offenders.join('\n')}`,
+    ).toHaveLength(0)
+  })
+
+  /* ---------- Warning：as TFile ---------- */
+
+  it('不用 as TFile 强行断言（审核会警告）', () => {
+    const code = stripComments(read('src/md/vault.ts'))
+    expect(code, 'as TFile 是强行断言，改用 instanceof 或类型守卫').not.toMatch(/\bas\s+TFile\b/)
+  })
+
+  /* ---------- Warning：globalThis ---------- */
+
+  it('不直接用 globalThis（popout 兼容性），除了 store 那一处', () => {
+    /* `globalThis` 只在 store/index.ts 里为了兼容 node 测试环境。
+       别处用会让 popout 窗口的行为不一致。*/
+    /* 两个例外，都有理由：
+     * - store/index.ts：用它是为了让纯逻辑层在 node 测试环境里也能跑计时器
+     * - test-setup.ts：给 node 测试环境补 ResizeObserver 等 stub，不进产物 */
+    const allowed = new Set(['src/store/index.ts', 'src/test-setup.ts'])
+    for (const file of listSourceFiles()) {
+      if (allowed.has(file)) continue
+      const code = stripComments(readFileSync(join(here, file), 'utf8'))
+      expect(code, `${file} 用了 globalThis，改成 window 或 activeWindow`).not.toMatch(
+        /\bglobalThis\b/,
+      )
+    }
+  })
+
+  /* ---------- Warning：builtin-modules ---------- */
+
+  it('不用 builtin-modules 包（审核建议换掉，用 node 内置的）', () => {
+    const p = JSON.parse(read('package.json'))
+    expect(
+      p.devDependencies?.['builtin-modules'] ?? p.dependencies?.['builtin-modules'],
+      'builtin-modules 已被 node:module 的 builtinModules 取代',
+    ).toBeFalsy()
+
+    /* 构建配置里要用 node 内置的那份 */
+    const cfg = read('esbuild.config.mjs')
+    expect(cfg, '应该从 node:module 取 builtinModules').toContain('builtinModules')
+  })
+})
+
+/**
+ * 列出所有源码文件（.ts / .tsx / .mjs），相对仓库根、正斜杠分隔。
+ *
+ * 与 `listTestFiles` 的区别：那个只找 `*.test.ts(x)`，
+ * 这个找全部源码 —— 审核规则要扫的是**所有**写代码的地方，
+ * 不只是测试文件。
+ *
+ * 排除 `.test.` 文件本身：断言代码里出现 `createElement('script')`
+ * 这样的字符串（我刚才就写了）是正常的，那是判据不是代码。
+ */
+function listSourceFiles(): string[] {
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const name of readdirSync(join(here, dir))) {
+      if (name === 'node_modules' || name.startsWith('.')) continue
+      const full = join(dir, name)
+      const stat = statSync(join(here, full))
+      if (stat.isDirectory()) walk(full)
+      else if (/\.(ts|tsx|mjs)$/.test(name) && !/\.test\./.test(name)) {
+        out.push(full.replace(/\\/g, '/'))
+      }
+    }
+  }
+  walk('src')
+  // 构建配置也在源码范围里（esbuild.config.mjs / vite.css.config.mts）
+  for (const f of ['esbuild.config.mjs', 'vite.css.config.mts']) {
+    if (existsSync(join(here, f))) out.push(f)
+  }
+  return out
+}

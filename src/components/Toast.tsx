@@ -10,8 +10,8 @@ export function Toast() {
 
   useEffect(() => {
     if (!toast) return
-    const h = setTimeout(() => useStore.setState({ toast: null }), 5200)
-    return () => clearTimeout(h)
+    const h = window.setTimeout(() => useStore.setState({ toast: null }), 5200)
+    return () => window.clearTimeout(h)
   }, [toast])
 
   return (

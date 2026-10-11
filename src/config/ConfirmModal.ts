@@ -46,10 +46,13 @@ export class ConfirmModal extends Modal {
       // 「⚠」开头的是警告行 —— 单独标红加粗，别淹没在普通说明里
       const li = ul.createEl('li')
       li.setText(line)
-      if (line.startsWith('⚠')) {
-        li.style.color = 'var(--text-error)'
-        li.style.fontWeight = '600'
-      }
+      /* 用 CSS class 而不是 `li.style.color = ...`。
+         官方审核有一条 `no-static-styles-assignment` 规则专门拦这个
+         （Error 级别，不过审），而且内联样式**必须写在 styles.css 里**
+         ——styles.css 是全局加载的，但 DOM 上加的内联样式优先级更高，
+         换个主题可能就压不住了。
+         class 交给 CSS 决定，用户换主题时也能跟着变。*/
+      if (line.startsWith('⚠')) li.addClass('cl-warn-line')
     }
 
     new Setting(contentEl)

@@ -37,12 +37,12 @@ function NowLine() {
   const [m, setM] = useState(() => nowMin())
   useEffect(() => {
     const tick = () => setM(nowMin())
-    const h = setTimeout(tick, 60000 - (Date.now() % 60000) + 50)
+    const h = window.setTimeout(tick, 60000 - (Date.now() % 60000) + 50)
     // 时间跨过午夜时立刻刷新一次，别等下一个周期
-    const iv = setInterval(tick, 60000)
+    const iv = window.setInterval(tick, 60000)
     return () => {
-      clearTimeout(h)
-      clearInterval(iv)
+      window.clearTimeout(h)
+      window.clearInterval(iv)
     }
   }, [])
   if (m < D0 || m > D1) return null

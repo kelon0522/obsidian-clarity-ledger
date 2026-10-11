@@ -21,9 +21,44 @@
  * 里手改了，以他的为准，不覆盖（并把内容读回来）。
  */
 
-import type { App, TFile } from 'obsidian'
+/*
+ * `TFile` 必须走 `import type`（type-only）。
+ *
+ * 官方审核建议「用 `instanceof TFile` 而不是 `as TFile`」—— 这意见对，
+ * 但**不能改成值导入**：`obsidian` 这个包只有类型定义、没有运行时入口
+ * （package.json 里没有 main/module），值导入会让 vitest 立刻报
+ *   Failed to resolve entry for package "obsidian"
+ * 真机上倒是能跑（Obsidian 运行时注入了它），但**所有测试会全挂**。
+ *
+ * 所以用**类型守卫**做收窄：不依赖运行时 instanceof，
+ * 但同样**不是强行断言** —— 运行时真的会校验。
+ */
+import type { App, TAbstractFile, TFile } from 'obsidian'
 import type { DB, Day } from '@/core/types'
 import { nowMin } from '@/core/time'
+
+/**
+ * 判断一个 `TAbstractFile` 是不是普通文件（而不是文件夹）。
+ *
+ * ## 为什么需要它
+ *
+ * `getAbstractFileByPath` 返回 `TAbstractFile`（可能是文件也可能是文件夹），
+ * 而 `renameFile` 只收文件。原先写 `f as TFile` 是**强行断言** ——
+ * 万一那真是文件夹，运行时会拿到类型不对的对象然后炸。
+ *
+ * ## 为什么不用 `instanceof TFile`
+ *
+ * 见上面那段注释的说明：`obsidian` 包没有运行时入口，
+ * 值导入会让所有测试挂掉。所以用**鸭子类型**判断：
+ * `stat` 是 TFile 独有的（TFolder 只有 `children` / `isRoot`）。
+ *
+ * 判据不碰 obsidian 的运行时 → 测试环境成立；
+ * 但仍然是**真正的运行时校验**，不是编译期的强转 ——
+ * 审核要的安全性质达到了。
+ */
+function isPlainFile(f: TAbstractFile | null): f is TFile {
+  return f instanceof Object && typeof (f as { stat?: unknown }).stat === 'object'
+}
 import { normalizeDB } from '@/core/normalize'
 import { DEFAULT_SETTINGS, fullPath, parseName } from '@/config/settings'
 import type { PluginSettings } from '@/config/settings'
@@ -124,7 +159,10 @@ export class VaultStore {
   async writeDay(key: string, day: Day, force = false): Promise<void> {
     const md = renderDay(day)
     const path = this.pathOf(key)
-    const existing = this.app.vault.getAbstractFileByPath(path) as TFile | null
+    const raw = this.app.vault.getAbstractFileByPath(path)
+    /* 用类型守卫收窄，不用 `as TFile` ——
+       官方审核会警告强行断言，而且守卫顺带排掉了「那是个文件夹」的情况。*/
+    const existing = isPlainFile(raw) ? raw : null
 
     if (!existing) {
       await this.ensureFolder()
@@ -158,7 +196,8 @@ export class VaultStore {
   /** 读单天（外部改动后同步用） */
   async readDay(key: string): Promise<Day | null> {
     const path = this.pathOf(key)
-    const f = this.app.vault.getAbstractFileByPath(path) as TFile | null
+    const raw = this.app.vault.getAbstractFileByPath(path)
+    const f = isPlainFile(raw) ? raw : null
     if (!f) return null
     try {
       const md = await this.app.vault.cachedRead(f)
@@ -176,7 +215,12 @@ export class VaultStore {
   async removeDay(key: string): Promise<void> {
     const path = this.pathOf(key)
     const f = this.app.vault.getAbstractFileByPath(path)
-    if (f) await this.app.vault.delete(f)
+    /* `fileManager.trashFile()` 而不是 `vault.delete()`。
+       官方审核提的这条 Warning 很有道理：`vault.delete()` 是**真删**，
+       而用户在 Obsidian 设置里可能开着「删除时移入系统回收站」——
+       插件绕过这个设置直接抹掉，误删了就找不回来了。
+       trashFile 会尊重用户的偏好（开了就进回收站，没开才真删）。*/
+    if (f) await this.app.fileManager.trashFile(f)
     this.stamp.delete(key)
   }
 
@@ -237,12 +281,21 @@ export class VaultStore {
       }
       try {
         const f = this.app.vault.getAbstractFileByPath(item.fromPath)
-        if (!f) {
-          // 计划和执行之间文件被删了 —— 当成跳过，不算失败
+        /* 两个判断合成一个。
+           `getAbstractFileByPath` 返回 `TAbstractFile` —— 可能是文件，
+           也可能是文件夹，也可能是 null。
+           原先写 `if (!f) {...}` + `f as TFile`：
+           - 强行断言（`as TFile`）万一那真是文件夹，
+             renameFile 会拿到类型不对的对象然后运行时炸
+           - 官方审核两条一起提了：`Avoid casting to 'TFile'`
+             和「receiver 本身接受原类型，那条断言多余」
+           现在用类型守卫 `isPlainFile` 一个判断同时解决 null 和类型收窄。*/
+        if (!isPlainFile(f)) {
+          // 文件不存在（计划和执行之间被删了）或不是普通文件 —— 当成跳过，不算失败
           outcome.skipped.push({ key: item.key, fromPath: item.fromPath, reason: 'same-day' })
           continue
         }
-        await this.app.fileManager.renameFile(f as TFile, item.toPath)
+        await this.app.fileManager.renameFile(f, item.toPath)
         if (item.kind === 'rename') outcome.renamed++
         else outcome.moved++
         /* stamp 不用动：它按**日期键**索引，而迁移不改变日期键。

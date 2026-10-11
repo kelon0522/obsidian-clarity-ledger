@@ -1,6 +1,6 @@
 import esbuild from 'esbuild'
 import process from 'node:process'
-import builtins from 'builtin-modules'
+import { builtinModules } from 'node:module'
 import path from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -56,7 +56,13 @@ const context = await esbuild.context({
     '@lezer/common',
     '@lezer/highlight',
     '@lezer/lr',
-    ...builtins,
+    /* Node 内置模块清单。
+       原先 import 自 `builtin-modules` 这个包，官方审核提了
+       「should be replaced with an alternative package」——
+       而它替代品就是 Node 自带的 `module.builtinModules`（Node 18+）。
+       **少一个依赖少一份 lock 条目**，这个包只在这个构建脚本里用，
+       换成内置的直接从 node:module 取，连安装都不用了。*/
+    ...builtinModules,
   ],
   jsx: 'automatic',
   format: 'cjs',

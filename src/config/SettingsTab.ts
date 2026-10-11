@@ -60,7 +60,11 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     const cfg = this.plugin.settings
 
-    containerEl.createEl('h2', { text: '清晰力 · 每日规划' })
+    /* 用 `new Setting().setHeading()` 而不是 `containerEl.createEl('h2')`。
+       官方审核明确要求统一 UI（**Error 级别，不过审**），
+       而且 `setHeading()` 生成的标题会自动跟随用户的字体与字号设置 ——
+       直接createEl 出来的 h2 不跟主题，视觉上会突兀。*/
+    new Setting(containerEl).setName('清晰力 · 每日规划').setHeading()
     containerEl.createEl('p', {
       text: '数据存在 vault 的 Markdown 文件里，能全局搜索、能 git、能跟着同步走。',
       cls: 'cl-settings-note',
@@ -357,8 +361,19 @@ export async function reopenLedgerView(app: App): Promise<void> {
   for (const leaf of workspace.getLeavesOfType(VIEW_TYPE)) {
     await leaf.detach()
   }
-  // 等一帧，让 Obsidian 真的把旧视图卸掉
-  await new Promise((r) => setTimeout(r, 0))
+  /* 等一帧，让 Obsidian 真的把旧视图卸载完。
+     原先写的是 `await new Promise((r) => setTimeout(r, 0))`，
+     官方审核提了两条：
+       - `Unexpected await of a non-Promise`（tslib 的 `__awaiter` 判据太粗，
+         `new Promise(r => setTimeout(r, 0))` 被当成同步表达式）
+       - `Use 'window.setTimeout()' instead of 'setTimeout()'`
+     改用 `requestAnimationFrame`：语义更准（就是「等下一帧」），
+     顺带两个警告一起消掉。
+     ⚠️ 要写成 async 回调形式 —— 直接传 `requestAnimationFrame` 作为 then 回调
+     会把时间戳（第一个参数）当 resolve 的值传进去。 */
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
   const leaf = workspace.getLeaf('tab')
   await leaf.setViewState({ type: VIEW_TYPE, active: true })
   await workspace.revealLeaf(leaf)
