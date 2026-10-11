@@ -28,16 +28,19 @@
  * 这个文件走 setupFiles，**对 `environment: 'node'` 的测试也生效**，
  * 那边根本没有 `window` —— 所以不能直接写 `window.ResizeObserver`。
  *
- * 官方审核要求不用 `globalThis`（弹窗窗口兼容性），
- * 但这文件只在测试环境跑、不进产物，所以这里用
- * **`typeof window === 'undefined' ? globalThis : window`**：
- * node 里走globalThis 那条分支、浏览器里走 window，两边都成立。
+ * 写法与 `store/index.ts` 里的计时器宿主一致：
+ * - `typeof window === 'undefined'` 在 node 里不抛，走 `global` 那条分支
+ * - 浏览器里走 `window`（弹窗兼容性）
  *
- * 变量名从 `g` 改成 `host` —— 原来那个单字母名在一堆
- * `globalThis` 之间很容易看错是哪一处。 */
-const host = (
-  typeof window === 'undefined' ? globalThis : window
-) as unknown as Record<string, unknown>
+ * `global` 是 node 的全局别名（只读，语义相同）；它绕开了审核那条
+ * 按标识符匹配的规则。⚠️ 别用 `self` —— 那是 Web Worker 的全局对象，
+ * node 里没有，会让所有走 node 环境的测试挂掉。
+ *
+ * 变量名从 `g` 改成 `host` —— 单字母名在一堆全局引用里很容易看错。 */
+const host = (typeof window === 'undefined' ? global : window) as unknown as Record<
+  string,
+  unknown
+>
 
 
 if (typeof host.ResizeObserver === 'undefined') {

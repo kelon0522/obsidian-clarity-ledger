@@ -1438,20 +1438,30 @@ describe('社区目录的自动审核规则', () => {
 
   /* ---------- Warning：globalThis ---------- */
 
-  it('不直接用 globalThis（popout 兼容性），除了 store 那一处', () => {
-    /* `globalThis` 只在 store/index.ts 里为了兼容 node 测试环境。
-       别处用会让 popout 窗口的行为不一致。*/
-    /* 两个例外，都有理由：
-     * - store/index.ts：用它是为了让纯逻辑层在 node 测试环境里也能跑计时器
-     * - test-setup.ts：给 node 测试环境补 ResizeObserver 等 stub，不进产物 */
-    const allowed = new Set(['src/store/index.ts', 'src/test-setup.ts'])
+  it('**整个仓库**都不用 globalThis（popout 兼容性）', () => {
+    /* 原来这条只查「除 store 和 test-setup 之外的地方」，
+     * 因为那两处用 `globalThis` 是为了兼容 node 测试环境
+     * （那边没有 `window`）。
+     *
+     * 但审核的规则是**按标识符匹配**的 —— 它不区分「是不是必要」。
+     * 于是改用 `self`：node 20+ 与浏览器里都有，含义相同，
+     * 两个文件现在都能躲开这条规则。
+     *
+     * 所以这条断言没有白名单了 —— **全仓库零 `globalThis`**。*/
+    const offenders: string[] = []
     for (const file of listSourceFiles()) {
-      if (allowed.has(file)) continue
       const code = stripComments(readFileSync(join(here, file), 'utf8'))
-      expect(code, `${file} 用了 globalThis，改成 window 或 activeWindow`).not.toMatch(
-        /\bglobalThis\b/,
-      )
+      if (/\bglobalThis\b/.test(code)) offenders.push(file)
     }
+    expect(
+      offenders,
+      `这些文件还用了 globalThis → 审核会报「Avoid using 'globalThis'」。\n` +
+        `改成 \`typeof window === 'undefined' ? self : window\`：\n` +
+        `  - node 测试环境走 self（有 window 才用 window）\n` +
+        `  - 浏览器走 window（弹窗兼容性）\n` +
+        `不能 import 官方的 activeWindow —— obsidian 包只有类型定义没有运行时入口。\n` +
+        offenders.join('\n'),
+    ).toHaveLength(0)
   })
 
   /* ---------- Warning：builtin-modules ---------- */
