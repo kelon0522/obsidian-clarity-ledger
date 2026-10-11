@@ -16,11 +16,19 @@ name: CI
 # 改`src/md/migrate.ts` / `src/config/SettingsTab.ts` 时，
 # 按 `手测清单.md` 第六节在真机跑一遍。
 
+# ⚠️ **分支名必须是 `main`。**
+# 仓库原来在本地是 `master`，推到 GitHub 时改了名（GitHub 新仓库的默认分支、
+# 以及社区目录 PR 的惯例都是 `main`）。这份 workflow 一度还写着 `master` ——
+# 而 `on: push: branches:` 写错分支名**不报错、不警告，只是永远不触发**。
+# 每换一次分支名都要记得回来改这里。
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
+  # 手动触发：改完 workflow 本身想验证、或本地跑完不放心想再确认一次时用。
+  # 没有它就只能靠「推一个空 commit」来触发，麻烦且容易忘记。
+  workflow_dispatch:
 
 permissions:
   contents: read
