@@ -3,7 +3,7 @@
   "name": "Clarity Ledger",
   "version": "0.1.6",
   "minAppVersion": "1.5.0",
-  "description": "Daily clarity planner based on the T-grid note method. Todos are the master table; the plan and actual tracks are two projections of it. Data lives as Markdown in your vault, so it is fully searchable.",
+  "description": "Daily clarity planner built on the T-grid note method from the book 认知觉醒 (Cognitive Awakening). Todos are the master table; your plan and actual tracks are two projections of it. Data stays as Markdown in your vault, so it is fully searchable.",
   "author": "kelon0522",
   "authorUrl": "https://github.com/kelon0522",
   "isDesktopOnly": true

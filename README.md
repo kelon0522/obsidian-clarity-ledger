@@ -3,9 +3,9 @@
 English | [中文](./README.zh-cn.md)
 
 Daily clarity planner based on the **T-grid note method** (工字格笔记法) from the book
-*Cognitive Awakening* by Zhou Ling. One Markdown file per day, with three linked columns —
-**your data stays in your vault**, so it's searchable, git-friendly, and follows whatever sync
-setup you already use.
+*Cognitive Awakening* (认知觉醒) by Zhou Ling. One Markdown file per day, with three linked
+columns — **your data stays in your vault**, so it's searchable, git-friendly, and follows
+whatever sync setup you already use.
 
 ![Screenshot](screenshot.png)
 
