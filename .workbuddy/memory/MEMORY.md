@@ -19,23 +19,57 @@
 - **`package-lock.json` 必须提交** —— release 与 CI 都用 `npm ci`，没 lock 直接失败。
 - `description` 收尾必须是 `.`/`?`/`!`/`)`，中文句号 `。` 会被 bot 判成「描述没写完」。
 
+## 行尾符：两个方向的硬要求
+- **`.bat` 必须 CRLF** —— cmd.exe 按 CRLF 切分命令，LF 会让它**错位拼接相邻行**，
+  把 `REM  Clarity` 截成 `'larity'` + `'al'` 两条命令，刷几十条无意义报错。
+  **脚本一个字都没错，症状却完全看不出原因。**
+- **`.sh` 必须 LF** —— CRLF 会让 sh 报 `syntax error near unexpected token $'\r'`。
+- **`.bat` 还得纯 ASCII** —— 按系统 ANSI 代码页（中文机器 cp936）读，UTF-8 中文变乱码。
+  原作者在文件头写了这条约定，我上一版加了一行中文引用把它破坏了。
+- 已由 `.gitattributes` 锁死（`*.bat eol=crlf`、`*.sh eol=lf`）+ `npm run check:bat`（已并入 build）。
+- **这个 bug 本机复现不了**（`core.autocrlf=true` 自动转换），只有 clone 下来的人会炸。
+- ⚠️ **别给 `package-lock.json` 加 `-text`** —— 加了再跑 `--renormalize` 会丢条目，
+  连带把 node_modules 的包删掉。教训已写进 `.gitattributes` 注释。
+
+## lock 的两类坏条目（`npm run lock:fix`）
+1. **连 `version` 都没有**（空壳）—— 22 个 esbuild 平台二进制。
+   症状：`npm ci` 报 `TypeError: Invalid Version`。
+2. **有 `version` 但缺 `resolved`/`integrity`** —— 如 `@csstools/css-tokenizer`
+   （npm 要解析 peer 元数据才写得全）。症状：`npm ci` 报 `Missing: xxx from lock file`。
+
+- 判据不能只看 `!v.version`，**两类都要处理**。
+- 情况 B 必须**就地补字段**、不能整条替换 —— 条目身上有 `peer: true` 等字段。
+- 本次补了 130 个条目。
+- **本地 `npm install` 会悄悄把 lock 补对** → 「本地好好的、CI 挂了」，
+  所以要在干净目录单独验 `npm ci`。
+
 ## 工具链速查
 - 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防 CJS/循环依赖雷区）。
 - 测试：`npm test`（206 用例）；`npm run mutation`（17 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+- `npm run check:bat`：install.bat 的行尾/编码/BOM 五条断言。
 - **测试与变异测试已改为 node 驱动**（`scripts/test.mjs` / `scripts/mutation.mjs`），不再依赖 bash；
   `run-tests.sh` / `mutation.sh` 降级为回退路径，node 拿不到子进程输出时自动落到它们。
-- `npm run lock:fix`：补 lock 里optionalDependencies 的空壳条目（见下）。
+- `npm run lock:fix`：补 lock 的两类坏条目。
 - 发版：`npm version patch` → `git push --tags`。
 - CI：`.github/workflows/ci.yml`（PR/push 跑 测试→构建→产物自检→上架资源+图标尺寸检查）。
+
+## 写断言时的两条纪律（都栽过）
+- **断言的 `detail` 要惰性求值**（传函数而不是字符串）。构造消息的代码本身会抛，
+  而异常发生在包装之外 —— 于是那条最该抓问题的断言自己先崩了、永远绿。
+  `check-bat.mjs` 第一版就栽了：对 `Set` 直接调 `.map` 抛 TypeError。
+  **错误消息本身也要测。**
+- **「测试报错但一条用例都没失败」通常是 `node_modules` 缺包**，不是测试坏了。
+  npm 中途被中断会留下「旧包删了、新的没装完」的半成品，
+  vitest 把它记成 unhandled error、用例计数不受影响。
+  修：`npm install --no-save --ignore-scripts <缺失包名>`。
 
 ## 这台机器的环境限制（会误导判断）
 - **node 里的 `spawnSync` 拿不到子进程输出**：报 `EBUSY`，`status: null`、`stdout: undefined`。
   同一台机器上从 bash 直接跑完全正常。所以任何「node 里 spawn vitest/git」的写法在这台机器上
   **必然失败，但换台机器就正常** —— 别把它当成代码 bug。
-- `npm install` 会挂在 esbuild 的 postinstall（同样是 spawn 问题）。
-  要生成 lock 用 `npm install --package-lock-only`，再用 `npm run lock:fix` 补全
-  （`--package-lock-only` 会给 22 个 esbuild 平台二进制留下空壳条目，
-  缺 version 的条目会让 `npm ci` 报 `TypeError: Invalid Version`）。
+- `npm install` 会挂在 esbuild 的 postinstall（同样是 spawn 问题），而且很慢（7 分钟起）。
+  要生成 lock 用 `npm install --package-lock-only`，再用 `npm run lock:fix` 补全。
+- `grep -c $'\r$'` 在 Git Bash 下会误报行尾（自动转换）—— **验行尾必须用字节级检查**。
 
 ## styles.css 的作用域纪律（v0.1.0 修过一次真事故）
 - `styles.css` 是**整个 vault 全局加载**的 —— 用户日记、主题、其他插件都吃这份 CSS。
