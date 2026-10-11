@@ -1594,3 +1594,110 @@ describe('tag 命名', () => {
     expect(src, '没处理 packed-refs（tag 被 gc 合并进去的情况）').toContain('packed-refs')
   })
 })
+
+/* ==================================================================
+ * lock 与 package.json 的一致性
+ * ==================================================================
+ *
+ * ## 这组在防什么（今天又踩了一次同一个病的变种）
+ *
+ * 2026-10-11提交社区目录被拒，理由是
+ *   `createElement('script')` — Code obfuscation（Error）
+ * 那是 React 19 的「资源提升」功能，官方审核会拦。
+ *
+ * 查下来发现根因不是「用了 React 19」，而是**版本不一致**：
+ *
+ * | 位置 | react版本 |
+ * |---|---|
+ * | `package.json` 声明 | 18.3.1 |
+ * | 本机 `node_modules` 实际装 | 18.3.1 |
+ * | **`package-lock.json` 锁的** | **19.3.0** |
+ * | 产物 `main.js`（CI 构建） | **19.3.0** |
+ *
+ * 本机跑 `npm install` → 按 package.json 装 18 → 一切正常；
+ * CI 跑 `npm ci` → 按 lock 装 19 → 产物里有那 3 处 → 审核报错。
+ *
+ * **本机是唯一「React 是 18」的环境**，和今天早上那四道 CI 门槛
+ * 是同一个病：**本机正常 ≠ CI 正常**。
+ *
+ * 所以判据不是「package.json 写了什么」，而是
+ * **「lock 里锁的版本是否满足 package.json 声明的 range」**。
+ */
+describe('lock 与 package.json 的一致性', () => {
+  const p = () => JSON.parse(read('package.json'))
+  const lock = () => JSON.parse(read('package-lock.json'))
+
+  /** 极简 semver 判定：只处理 ^ / ~ / 精确版本这几种写法 */
+  function satisfies(version: string, range: string): boolean {
+    const v = version.split('.').map(Number)
+    const r = range.replace(/^[\^~]/, '')
+    const target = r.split('.').map(Number)
+
+    if (!version.startsWith(range.replace(/[\^~].*/, ''))) return false
+    if (range.startsWith('^')) {
+      // ^x.y.z：主版本相同即可（0.x 的话次版本也要同）
+      if (target[0] > 0) return v[0] === target[0]
+      if (target[1] > 0) return v[0] === 0 && v[1] === target[1]
+      return v[0] === 0 && v[1] === 0 && v[2] === target[2]
+    }
+    if (range.startsWith('~')) {
+      return v[0] === target[0] && v[1] === target[1]
+    }
+    return version === range
+  }
+
+  it('lock 里每个直接依赖的版本都满足 package.json 声明的 range', () => {
+    const bad: string[] = []
+
+    /* 显式标 Record<string, string>：`p()` 返回的是 `any`，
+       不标注的话 `range` 会被推成 `Record<string,string>`，
+       传给 satisfies 时报 TS2345。 */
+    const declared: Record<string, string> = {
+      ...(p().dependencies as Record<string, string>),
+      ...(p().devDependencies as Record<string, string>),
+    }
+
+    for (const [name, range] of Object.entries(declared)) {
+      const entry = lock().packages[`node_modules/${name}`]
+      if (!entry?.version) continue
+      if (!satisfies(entry.version, range)) {
+        bad.push(
+          `${name}：package.json 声明 ${range}，但 lock 锁的是 ${entry.version}\n` +
+            `     → 本机 npm install 装前者，CI 的 npm ci 装后者（产物不一样！）`,
+        )
+      }
+    }
+    expect(bad, `lock 与 package.json 不一致：\n${bad.join('\n')}`).toHaveLength(0)
+  })
+
+  /* React 单独守一条：它是产物里唯一「版本会改变代码行为」的依赖。
+     19 → 18 不是「差不多」，而是产物里会少掉 createElement('script')，
+     而那正是社区目录会拦的 Error。*/
+  it('react / react-dom 必须是 18.x（19 的资源提升会被审核判为代码混淆）', () => {
+    const l = lock()
+    for (const name of ['react', 'react-dom']) {
+      const v = l.packages[`node_modules/${name}`]?.version
+      expect(v, `lock 里没有 ${name}`).toBeTruthy()
+      expect(
+        v,
+        `${name} 锁的是 ${v} —— React 19 会在产物里产生 ` +
+          `createElement('script')，社区目录审核会判「Code obfuscation」（Error，不过审）。`,
+      ).toMatch(/^18\./)
+    }
+  })
+
+  /* 产物自检：这一条最直接 —— 不看声明、不看 lock，
+     直接检查**用户实际会装到的东西**。
+     之前那条「源码不含 createElement('script')」查的是源码，
+     而审核扫的是产物 —— 两者不是一回事。*/
+  it('构建产物里没有 createElement("script")（审核扫的就是它）', () => {
+    const built = readFileSync(join(here, 'main.js'), 'utf8')
+    const hits = [...built.matchAll(/createElement\(\s*["']script["']/g)]
+    expect(
+      hits.map((_, i) => `第 ${i + 1} 处`),
+      `产物里有 ${hits.length} 处 createElement("script") —— ` +
+        `社区目录会判「Code creates script elements at runtime」（Error，不过审）。\n` +
+        `如果源码里确实没有，那多半是 React 19 的资源提升，把 react 降到 18 即可。`,
+    ).toHaveLength(0)
+  })
+})
