@@ -24,7 +24,8 @@
     "test:watch": "vitest",
     "mutation": "node scripts/mutation.mjs",
     "lock:fix": "node scripts/fix-lock-optional.mjs",
-    "version": "node -e \"const fs=require('fs'),m=require('./manifest.json'),p=require('./package.json');m.version=p.version;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\\n');const v=require('./versions.json');v[p.version]=m.minAppVersion;fs.writeFileSync('versions.json',JSON.stringify(v,null,2)+'\\n')\" && git add manifest.json versions.json && git commit -m \"chore: v\""
+    "version": "node -e \"const fs=require('fs'),m=require('./manifest.json'),p=require('./package.json');m.version=p.version;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\\n');const v=require('./versions.json');v[p.version]=m.minAppVersion;fs.writeFileSync('versions.json',JSON.stringify(v,null,2)+'\\n')\" && git add manifest.json versions.json && git commit -m \"chore: v\"",
+    "postversion": "node scripts/fix-tag.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

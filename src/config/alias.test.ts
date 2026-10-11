@@ -1499,3 +1499,98 @@ function listSourceFiles(): string[] {
   }
   return out
 }
+
+/* ==================================================================
+ * tag 命名（发版必踩的坑）
+ * ==================================================================
+ *
+ * ## 为什么单独一组
+ *
+ * `npm version patch` 默认打**带 `v` 前缀**的 tag（`v0.1.1`），
+ * 而 Obsidian 生态要求**不带 `v`**：
+ *
+ * - 社区目录按 `manifest.json` 的 version 找同名 tag，匹配不上
+ * - `.github/workflows/release.yml` 的触发条件是正则
+ *   `[0-9]+.[0-9]+.[0-9]+` —— **不含 `v`**，
+ *   带前缀的 tag 推上去**根本不会触发发版**
+ *
+ * 2026-10-11 实际踩了：跑完 `npm version patch`，
+ *紧接着 `git push origin 0.1.1` 就报
+ *   error: src refspec 0.1.1 does not match any
+ *
+ * 修法：加`postversion` 钩子自动改名 ——
+ * **让它自动发生，比让人记住更可靠。**
+ */
+describe('tag 命名', () => {
+  /** release.yml 的 tag 触发正则（CRLF-safe） */
+  function releaseTagPattern(): string {
+    const yml = read('.github/workflows/release.yml')
+    /* `\r?\n` 而不是 `\n` —— **这个文件在 Windows 上是 CRLF**。
+       只写 `\n` 匹配不上，症状是「提取到 undefined」，
+       而报错说的是「没找到 tags 触发条件」，与真实原因隔了很远。
+       这个项目在行尾符上栽过好几次。 */
+    return yml.match(/tags:\s*\r?\n\s*-\s*'([^']+)'/)?.[1] ?? ''
+  }
+
+  it('package.json 配了 postversion 钩子自动去掉 v 前缀', () => {
+    const s = JSON.parse(read('package.json')).scripts
+    expect(
+      s.postversion,
+      '没有 postversion 钩子 → npm version 会打 v0.1.1 这种 tag，推上去不触发发版',
+    ).toBeTruthy()
+    expect(s.postversion).toContain('fix-tag')
+  })
+
+  it('仓库里的 tag 都不带 v 前缀', () => {
+    /* 断言**真实状态**而不是只看配置 ——
+       钩子也可能没跑（脚本中断、手动 git tag、浅克隆）。
+       直接扫 .git/refs/tags。*/
+    const dir = join(here, '.git', 'refs', 'tags')
+    if (!existsSync(dir)) return
+    const withV = readdirSync(dir).filter((t) => t.startsWith('v'))
+    expect(withV, `这些 tag 带 v 前缀，Obsidian 找不到：${withV.join(', ')}`).toHaveLength(0)
+  })
+
+  it('release.yml 的触发条件能匹配真实的 tag', () => {
+    const pattern = releaseTagPattern()
+    expect(pattern, 'release.yml 没找到 tags 触发条件').toBeTruthy()
+
+    /* **拿真实 tag 去 match**，而不是「看正则里有没有数字」——
+       后者只能证明字符串长什么样，证明不了它匹配得上。
+       而这正是出问题的地方：`v0.1.1` 不匹配 `[0-9]+...` → 不发版。
+
+       用 `^...$` 完整匹配 —— GitHub Actions 的 glob 也是全匹配，
+       部分匹配会放过 `1.0.0-rc1` 这种前缀相同的。*/
+    const re = new RegExp('^' + pattern + '$')
+    const dir = join(here, '.git', 'refs', 'tags')
+    if (!existsSync(dir)) return
+    const tags = readdirSync(dir)
+    const notMatched = tags.filter((t) => !re.test(t))
+    expect(
+      notMatched,
+      `这些 tag 不触发 release.yml（推上去也不会建 Release）：\n` + notMatched.join('\n'),
+    ).toHaveLength(0)
+  })
+
+  it('每个已存在的 tag 都在 versions.json 里有对应记录', () => {
+    const dir = join(here, '.git', 'refs', 'tags')
+    if (!existsSync(dir)) return
+    const known = new Set(Object.keys(JSON.parse(read('versions.json'))))
+    for (const t of readdirSync(dir)) {
+      expect(known.has(t), `tag ${t} 在 versions.json 里没有记录 —— 发版时可能漏了`).toBe(true)
+    }
+  })
+
+  it('fix-tag 脚本的四种情况都处理了', () => {
+    const src = read('scripts/fix-tag.mjs')
+    /* 四种：只有对的 / 只有带 v 的 / 两个都在 / 都没有 */
+    expect(src, '缺「已就位」的分支').toContain('已就位')
+    expect(src, '缺「改名」的分支').toContain('改名为')
+    /* 「两个都在」时必须删带 v 的、保留对的 —— 反过来会毁掉能用的版本 */
+    expect(src, '缺「重复 tag」的处理').toContain('多余的 tag')
+    /* 都没有时要报错，不能静默通过 */
+    expect(src, '缺「找不到 tag」的报错').toContain('process.exit(1)')
+    /* packed-refs 场景必须报出来 —— 那个情况删文件不起作用 */
+    expect(src, '没处理 packed-refs（tag 被 gc 合并进去的情况）').toContain('packed-refs')
+  })
+})
