@@ -1211,9 +1211,14 @@ describe('lock 的跨平台完整性', () => {
 
   /* 只认这些前缀：它们是**按平台分发二进制**的包。
      普通的可选功能依赖（fsevents 只在 mac 上）不在此列 ——
-     那些是故意不给某些平台装的，加进 lock 反而会让 npm ci 失败。*/
+     那些是故意不给某些平台装的，加进 lock 反而会让 npm ci 失败。
+
+     ⚠️ `@napi-rs/lzma-` 是 2026-10-11 补的：`rollup` 在 Linux 上靠它做
+     brotli 压缩，**npm 10 不写进 lock、npm 11 会写**。
+     社区目录的 runner 默认 Node 24（npm 11）→ 少这一条就报
+     「The npm lockfile is out of date」。漏在正则里 = 本机永远查不出来。*/
   const PLATFORM_PKG =
-    /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|lightningcss-|esbuild-|rollup-|@tailwindcss\/oxide-)/
+    /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|@napi-rs\/lzma-|lightningcss-|esbuild-|rollup-|@tailwindcss\/oxide-)/
 
   it('声明了平台二进制的包，lock 里每个平台都有条目', () => {
     const l = lock()

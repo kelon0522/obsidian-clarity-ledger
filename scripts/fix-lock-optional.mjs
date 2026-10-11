@@ -122,11 +122,19 @@ for (const [p, v] of Object.entries(lock.packages ?? {})) {
  * 而 lock 的 `node_modules/` 下只收录了其中一部分 → 缺的那部分就是 C 类。
  *
  * 只处理「同名 + 看起来是平台后缀」的 optional 依赖
- * （esbuild-* / lightningcss-* / @rollup/rollup-* / @esbuild/*），
+ * （esbuild-* / lightningcss-* / @rollup/rollup-* / @esbuild/* / @napi-rs/lzma-*），
  * 避免把普通的可选功能依赖（fsevents 之类）也塞进去 ——
- * 那些是**故意不给某些平台装**的，加进 lock 反而会让 npm ci 报错。*/
+ * 那些是**故意不给某些平台装**的，加进 lock 反而会让 npm ci 报错。
+ *
+ * ⚠️ `@napi-rs/lzma-` 是 2026-10-11 补进来的，**漏了它导致社区目录一直不过**：
+ * `rollup` 的 optionalDependencies 里有 `@napi-rs/lzma-linux-x64-gnu`
+ * （rollup 在 Linux 上用它做 brotli 压缩），
+ * 而 **npm 10 不会把它写进 lock、npm 11 会** ——
+ * 社区目录的 runner 默认 Node 24（npm 11），跑 `npm install` 时发现少这一条，
+ * 就报「The npm lockfile is out of date」。
+ * 这条正则漏了它，C 类复查自然也就查不出来。*/
 const PLATFORM_SUFFIX =
-  /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|lightningcss-|esbuild-|rollup-|@swc\/core-|@tailwindcss\/oxide-)/
+  /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|@napi-rs\/lzma-|lightningcss-|esbuild-|rollup-|@swc\/core-|@tailwindcss\/oxide-)/
 
 for (const [p, entry] of Object.entries(lock.packages ?? {})) {
   if (!entry?.optionalDependencies) continue
