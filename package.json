@@ -16,6 +16,7 @@
     "build:css": "vite build --config vite.css.config.mts && node scripts/move-css.mjs",
     "build:js": "tsc --noEmit -p tsconfig.json && node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:bat": "node scripts/check-bat.mjs",
     "test": "node scripts/test.mjs",
     "test:watch": "vitest",
     "mutation": "node scripts/mutation.mjs",

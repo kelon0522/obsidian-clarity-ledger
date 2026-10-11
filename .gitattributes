@@ -1,0 +1,64 @@
+# 行尾符规则 —— 别删这个文件。
+#
+# ## 为什么需要它
+#
+# `install.bat` 曾因为行尾是 LF 而**完全跑不起来**：
+# cmd.exe 按 CRLF 切分命令，遇到 LF 会把相邻行错位拼接，
+# 于是 `REMClarity Ledger` 被截成两半、分别当成命令执行，
+# 刷出几十条「'larity' 不是内部或外部命令」。
+#
+# 症状与真实原因隔得很远 —— 第一反应会以为脚本内容写错了，
+# 而实际上一个字都没写错，**只是行尾符不对**。
+#
+# 本机`core.autocrlf=true`（Windows 默认），git 检出时会把 LF 转成 CRLF ——
+# 所以**本机跑没事、别人 clone 下来跑炸**。这种 bug 最难查：
+# 本地永远复现不了。
+#
+# ## 规则
+#
+# `*.bat text eol=crlf`
+#   Windows 批处理**必须**是 CRLF，这是 cmd.exe 的硬要求，不是风格偏好。
+#
+# `*.sh text eol=lf`
+#   shell 脚本反过来：CRLF 会让 `/bin/sh` 报 `syntax error near unexpected token $'\r'`。
+#   两个方向都要写死，否则哪天在 Linux 上跑就炸了。
+
+# ---------- Windows 批处理：必须 CRLF ----------
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ---------- shell 脚本：必须 LF ----------
+*.sh text eol=lf
+
+# ---------- 构建产物与依赖：不做行尾转换 ----------
+# 二进制的行尾转换会直接把文件搞坏
+*.png binary
+*.jpg binary
+*.ico binary
+
+# ⚠️ **不要**给 package-lock.json 加 `-text`，也不要对它跑 `--renormalize`。
+# 实测踩过两次：
+#
+# 1. 加 `-text` 再 `git add --renormalize package-lock.json`，
+#    lock 被重写并**丢掉了两个条目**（@csstools/css-tokenizer、
+#    @csstools/css-parser-algorithms）。症状是 `npm ci` 报
+#      Missing: @csstools/css-tokenizer@4.0.2 from lock file
+#    而本地 `npm install` 会悄悄把 lock 补对 ——
+#    于是「本地好好的、CI 挂了」，排查起来很费时间。
+# 2. 更糟的是 node_modules 里那两包被顺手删掉（npm 会先清理再装），
+#    装完就出现 `Cannot find package '@csstools/css-tokenizer'`，
+#    测试报 4 个 unhandled error 而**一条用例都没失败**——
+#    极容易被误判成「测试脚本有问题」。
+#
+# lock 是**机器读的结构化文件**，行尾格式对它毫无意义（JSON 解析器两种都吃）。
+# 让它跟着 `* text=auto` 走就行，**别特殊对待**。
+#
+# 真要重建 lock：`npm install --package-lock-only`，
+# 之后必须跑 `npm run lock:fix` 补 esbuild 平台二进制的空壳条目。
+
+# ---------- 源码：交给各人自己的 git 配置 ----------
+# .ts/.tsx/.css/.md 不写死eol —— 强行统一会让 diff 满屏是「整文件改��」。
+# 只有**格式硬性要求**的才在上面强制（bat / sh）。
+
+# ---------- 默认：交给 git 的autocrlf / text=auto ----------
+* text=auto

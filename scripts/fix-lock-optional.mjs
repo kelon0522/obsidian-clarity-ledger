@@ -62,17 +62,47 @@ function parentPathOf(p) {
   return p.slice(0, at).replace(/\/$/, '')
 }
 
-/** 找出所有需要补的条目 */
+/**
+ * 找出所有需要补的条目。
+ *
+ * ## 两类坏条目，症状不同
+ *
+ * **A. 连 version 都没有**（`{}` 空壳）
+ *   22 个 esbuild 平台二进制。`npm ci` 报 `TypeError: Invalid Version`
+ *   （arborist 的 canDedupe 里 `new SemVer(undefined)`）。
+ *
+ * **B. 有 version，但缺 `resolved` / `integrity`**
+ *   ```
+ *   { "version": "4.0.2", "dev": true, "optional": true, "peer": true, ... }
+ *   ```
+ *   npm 装这类包（`@csstools/css-tokenizer`）要解析 peer 依赖元数据，
+ *   受限环境里拿不到，于是这两个字段整个缺失。
+ *   症状不同：报的是
+ *     `Missing: @csstools/css-tokenizer@4.0.2 from lock file`
+ *   而**本地 npm install 会悄悄把它补上** → 「本地好好的、CI 挂了」。
+ *
+ * 早先只处理 A，B 漏了 —— 于是「lock 看着完整（version 都在）」
+ * 但 `npm ci` 照样失败。判据因此不能只看 `!v.version`。
+ */
 const todo = []
 for (const [p, v] of Object.entries(lock.packages ?? {})) {
   if (!p || p === '') continue
   if (v.link) continue
-  if (v.version) continue
-  todo.push({ path: p, name: pkgNameOf(p) })
+  // A：连 version 都没有
+  if (!v.version) {
+    todo.push({ path: p, name: pkgNameOf(p), why: '缺 version' })
+    continue
+  }
+  // B：有 version 但没 resolved —— 装不了（npm ci 会认为 lock 不同步）
+  // registry 直接给的包（`https://registry.npmjs.org/...`）才需要 resolved；
+  // 少数条目靠 `link` 或本地路径，那类已在上面对掉。
+  if (!v.resolved && !v.link) {
+    todo.push({ path: p, name: pkgNameOf(p), version: v.version, why: '缺 resolved/integrity' })
+  }
 }
 
 if (!todo.length) {
-  console.log('lock 里没有空壳条目，不用补')
+  console.log('lock 里没有坏条目，不用补')
   process.exit(0)
 }
 
@@ -83,13 +113,14 @@ const failed = []
 
 for (const item of todo) {
   const { name, path: p } = item
-  // 平台二进制包的版本永远和它的父包一致（esbuild 的发布机制就是这样）
-  const parentPath = parentPathOf(p)
-  const parent = parentPath ? lock.packages[parentPath] : null
-  const version = parent?.version
-
+  /* 版本从三处取（优先级从高到低）：
+     1. 条目自带（情况 B）
+     2. 父包（情况 A：平台二进制与父包同版本）
+     3. 都没有 → 只能从 registry 取该包的全部版本，取最新的 —— 有风险，
+     所以宁可报错也不猜。 */
+  let version = item.version ?? lock.packages[parentPathOf(p)]?.version
   if (!version) {
-    failed.push([name, '推不出父包版本'])
+    failed.push([name, '推不出版本号'])
     continue
   }
 
@@ -97,6 +128,23 @@ for (const item of todo) {
     const res = await fetch(`https://registry.npmjs.org/${name}/${version}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const meta = await res.json()
+
+    if (item.why === '缺 resolved/integrity') {
+      /* 情况 B：**就地补字段，不整条替换**。
+         这些条目身上有 `peer: true`、`dev: true`、`engines` 等字段 ——
+         整条覆盖会把它们抹掉，npm 重新计算 peer 依赖树，
+         结果 lock 依然「不同步」。
+         尤其 `peer: true` 抹掉后，npm 会认为它是个普通依赖。 */
+      const cur = lock.packages[p]
+      cur.resolved = meta.dist.tarball
+      cur.integrity = meta.dist.integrity
+      // 有可能连 tarball 都缺（少数包），补上
+      if (!cur.version) cur.version = meta.version
+      fixed++
+      continue
+    }
+
+    /* 情况 A：空壳条目，整条重建。 */
     const entry = {
       version: meta.version,
       resolved: meta.dist.tarball,
@@ -111,7 +159,7 @@ for (const item of todo) {
     entry.optional = true
     /* dev 跟着父包走：esbuild 是 vitest 的传递依赖 → 纯 dev。
        标错会让 `npm ci --omit=dev` 装一堆用不到的东西。*/
-    if (parent.dev) entry.dev = true
+    if (lock.packages[parentPathOf(p)]?.dev) entry.dev = true
     lock.packages[p] = entry
     fixed++
   } catch (e) {
@@ -129,12 +177,21 @@ if (failed.length) {
 writeFileSync(LOCK, JSON.stringify(lock, null, 2) + '\n')
 console.log(`补齐 ${fixed} 个条目`)
 
-/* 复查一遍：不能留下任何空壳 */
-const left = Object.entries(lock.packages).filter(
-  ([p, v]) => p !== '' && !v.link && !v.version,
-)
-if (left.length) {
-  console.error(`仍剩 ${left.length} 个空壳条目`)
+/* ---------- 复查：两类坏条目都要清掉 ----------
+   只查「缺 version」是不够的 —— 早先就是漏了缺 resolved 那类，
+   lock 看着完整（version 都在）而 `npm ci` 照样报 Missing。 */
+const stillBroken = Object.entries(lock.packages).filter(([p, v]) => {
+  if (p === '' || v.link) return false
+  if (!v.version) return true
+  if (!v.resolved) return true
+  return false
+})
+
+if (stillBroken.length) {
+  console.error(`\n仍剩 ${stillBroken.length} 个坏条目：`)
+  for (const [p, v] of stillBroken.slice(0, 10)) {
+    console.error(`  ${p} → version=${v.version ?? '(无)'} resolved=${v.resolved ?? '(无)'}`)
+  }
   process.exit(1)
 }
-console.log('校验通过：没有空壳条目了')
+console.log('校验通过：所有条目都有 version + resolved')

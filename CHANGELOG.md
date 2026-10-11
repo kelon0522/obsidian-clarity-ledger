@@ -10,6 +10,12 @@
 
 ### 修复
 
+- **install.bat 完全跑不起来**：行尾是 LF，cmd.exe 按 CRLF 切分命令，
+  相邻行被错位拼接，于是刷出几十条「'larity' 不是内部或外部命令」这类无意义报错。
+  这个 bug 本机复现不了（`core.autocrlf=true` 会自动转 CRLF），只有 clone 下来的人会炸。
+- **install.bat 里混入非 ASCII 字符**：`.bat` 按系统 ANSI 代码页读，
+  UTF-8 的中文在中文机器上是乱码。文件头原本就写了「刻意全 ASCII」的约定，
+  上一版加了一行中文引用把它破坏了。
 - **样式污染用户 vault**：`styles.css` 是整个 vault 全局加载的，
   而 `prefers-reduced-motion` 写的是裸 `*`、`:focus-visible` 也是裸的 ——
   用户给 Obsidian 设了「减少动效」之后，装了本插件，**所有界面**（含其他插件）
@@ -22,6 +28,10 @@
 
 ### 其他
 
+- 新增 `.gitattributes`：`*.bat` 强制 CRLF、`*.sh` 强制 LF，
+  从根上锁住行尾（而不是靠每个人本机的 git 配置）。
+- 新增 `npm run check:bat`：检查 install.bat 的行尾、编码、BOM 等五条，
+  并入 `npm run build`。
 - `npm test` / `npm run mutation` 改为node 驱动，不再依赖 bash。
 - Release 流程：测试移到发版之前；Release 不再是 draft。
 - 提交 `package-lock.json`，CI 与发版都用 `npm ci`。

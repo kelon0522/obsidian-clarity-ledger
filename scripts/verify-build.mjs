@@ -75,8 +75,41 @@ if (existsSync(MANIFEST)) {
   ok('description 不含 "This plugin"', !/this (is a )?plugin/i.test(desc))
   ok('description ≤ 250 字符', desc.length <= 250, `${desc.length} 字符`)
 
-  ok('LICENSE 文件存在（社区目录硬性要求）', existsSync(LICENSE), LICENSE)
-  ok('README.md 存在（社区列表会展示）', existsSync(README), README)
+ok('LICENSE 文件存在（社区目录硬性要求）', existsSync(LICENSE), LICENSE)
+ok('README.md 存在（社区列表会展示）', existsSync(README), README)
+
+  /* install.bat 的两条硬约束。
+     为什么在这里查而不在 CI 单独跑：这个脚本已经负责「上架资源齐不齐」，
+     而 .bat 的行尾/编码问题**同样会导致上架后用户跑不起来** ——
+     只是报错信息完全看不出跟插件有关（是 cmd 的语法错）。
+
+     详细背景见 scripts/check-bat.mjs 的文件头注释。
+     `npm run check:bat` 可以单独跑；这里顺手再拦一道，
+     免得「本地没跑 check、CI 也没跑」就发出去了。 */
+  {
+    const batPath = join(here, 'install.bat')
+    if (existsSync(batPath)) {
+      const bat = readFileSync(batPath)
+      let bareLf = 0
+      for (let i = 0; i < bat.length; i++) {
+        if (bat[i] === 0x0a && !(i > 0 && bat[i - 1] === 0x0d)) bareLf++
+      }
+      ok(
+        'install.bat 是 CRLF（LF 会让 cmd 错位解析，报几十条无意义的错）',
+        bareLf === 0,
+        bareLf ? `${bareLf} 行是裸 LF` : ''
+      )
+      let nonAscii = 0
+      for (let i = 0; i < bat.length; i++) if (bat[i] > 0x7f) nonAscii++
+      ok(
+        'install.bat 纯 ASCII（中文机器按 cp936 读，UTF-8 中文会变乱码）',
+        nonAscii === 0,
+        nonAscii ? `${nonAscii} 个非 ASCII 字节` : ''
+      )
+    } else {
+      ok('install.bat 存在', false, '缺失')
+    }
+  }
 
   /* 提交后每次更新都要打同名 tag 的 Release，Obsidian 按version 找 tag。
      **tag 不带 v 前缀** —— 带了就匹配不上，用户装不到更新。 */

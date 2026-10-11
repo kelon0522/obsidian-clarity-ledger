@@ -57,6 +57,36 @@ npm run test:watch      # 监听模式
 写变异时的规矩：**跨行的替换一律用 `string` / `stringTo`，不要用正则**。
 `string` 分支会自动适配行尾符。
 
+### 「测试报错了但一条用例都没失败」
+
+看到这种输出，别急着查测试脚本：
+
+```
+Tests        120 passed (120)
+Errors  4 errors
+Error: Cannot find package '@csstools/css-tokenizer'
+```
+
+这是 **`node_modules` 缺包**。npm 会先清理再安装，中途被中断（SIGTERM、Ctrl+C、
+关窗口）就会留下「旧包删了、新的没装完」的半成品状态。
+此时**一条用例都不会失败** —— vitest 把包解析失败记成 unhandled error，
+用例计数不受影响。
+
+修法（别动 lock）：
+
+```bash
+npm install --no-save --ignore-scripts <缺失的包名>
+```
+
+### 行尾符：`.bat` 必须 CRLF，`.sh` 必须 LF
+
+`.gitattributes` 已经写死了，但**别再对它加特殊规则**：
+
+- 给 `package-lock.json` 加 `-text` 会让 `--renormalize` 重写整个 lock、
+  **丢掉条目**，症状是 `npm ci` 报 `Missing: xxx from lock file`，
+  而本地 `npm install` 会悄悄补对 —— 「本地好好的、CI 挂了」。
+- 改行尾后检查：`npm run check:bat`（已并进 `npm run build`）。
+
 ### 为什么有mutation 这一条命令
 
 **「测试全绿」不等于「测试有效」。**

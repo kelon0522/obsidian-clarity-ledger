@@ -8,6 +8,21 @@ REM
 REM  NOTE: file encoding matters. .bat is read as the system ANSI
 REM  code page, so a UTF-8 file with Chinese characters turns into
 REM  mojibake. Everything here is deliberately ASCII.
+REM
+REM  This bit me for real. A line said "walk through KKU.md" -
+REM  name (shou-ce-qing-dan.md). Valid UTF-8, but NOT valid on
+REM  a cp936 console: it printed as garbage and looked like the
+REM  script was broken. The rule above was already written down;
+REM  I broke it in one edit. scripts/check-bat.mjs fails the build
+REM  if a non-ASCII byte ever appears here again.
+REM
+REM  SECOND trap, same file: line endings MUST be CRLF.
+REM  cmd.exe splits commands on CRLF. With bare LF it mis-splices
+REM  adjacent lines and prints dozens of nonsense errors like
+REM    'larity' is not recognized as an internal or external command
+REM  (that is "REM  Clarity" chopped mid-token) - while the script
+REM  text is perfectly correct.
+REM  Enforced by .gitattributes: *.bat text eol=crlf
 REM ============================================================
 setlocal
 
@@ -106,9 +121,9 @@ echo     2. Settings -^> Community plugins -^> turn OFF Safe mode
 echo     3. Enable "Clarity Ledger"
 echo     4. Click the calendar-check icon on the left ribbon
 echo.
-echo   Then walk through 手测清单.md - especially sections 3 and 6
-echo   (external edits to the .md file, and moving the storage folder),
-echo   which only apply to a real vault install.
+echo   Then walk through the manual test checklist in the repo root
+echo   ^(sections 3 and 6: external edits to the .md file, and moving
+echo   the storage folder^) - those only apply to a real vault install.
 echo.
 pause
 endlocal
