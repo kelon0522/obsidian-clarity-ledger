@@ -21,7 +21,7 @@
  *   回归防线换了个位置：`scripts/verify-build.mjs` 查产物里有没有重复打包。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 /* `import.meta.url` 在 vitest 转换后不是 file URL，fileURLToPath 会抛
@@ -951,3 +951,131 @@ describe('社区目录的多语言呈现', () => {
     }
   })
 })
+
+/* ==================================================================
+ * 依赖声明完整性
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * **「本机跑得过」不等于「别人跑得过」。**
+ *
+ * 2026-10-11 首次推GitHub，CI 立刻红了：
+ *
+ * ```
+ * Error: Cannot find package 'jsdom' imported from node_modules/vitest/...
+ * Test Files  1 failed | 6 passed (7)
+ *      Tests  120 passed (120)      ← 一条都没失败
+ *        Errors  4 errors
+ * ```
+ *
+ * 原因：`src/config/alias.test.ts` 顶部写着 `@vitest-environment jsdom`，
+ * 但 **`jsdom` 从来没在 `package.json` 里声明过**。
+ * 它之所以出现在 node_modules 里，是某次 `npm install` 顺手装的
+ * —— 恰好装上了，于是本地 215 条用例全绿。
+ *
+ * 而任何人 clone 下来 `npm ci`，装不到它 → 测试直接崩。
+ * **本机是唯一能跑通的环境**，这类bug 最晚在上架那天才暴露。
+ *
+ * ## 判据怎么设计的
+ *
+ * 不去逐个「该有哪些依赖」（那要维护一份清单），
+ * 而是抓更本质的东西：**测试实际 import 到的包，必须在 package.json 里声明**。
+ */
+describe('依赖声明完整性', () => {
+  it('package.json 声明了测试用到的 jsdom', () => {
+    const p = JSON.parse(read('package.json'))
+    /* 断言必须显式声明，而不是「在 node_modules 里存在」——
+       后者在任何机器上都成立，抓不到「没声明」这个真正的病。*/
+    expect(p.devDependencies?.jsdom, 'jsdom 没声明 → 别人 clone 下来跑不了测试').toBeTruthy()
+  })
+
+  /**
+   * 源码里直接 import 的第三方包，必须在 package.json 里声明。
+   *
+   * 这条才是真正能抓到 bug 的判据 —— 「被别的包依赖」不等于「你声明了它」：
+   * 上游哪天不再依赖它（或者换了实现），你的测试就突然崩了，
+   * 而你一行代码都没改。jsdom 正是这种情形。
+   */
+  it('测试文件 import 的外部包都有声明', () => {
+    const p = JSON.parse(read('package.json'))
+    const declared = new Set([
+      ...Object.keys(p.dependencies ?? {}),
+      ...Object.keys(p.devDependencies ?? {}),
+    ])
+
+    /* 逐个源码文件扫 import，取包名（scoped 包的「@scope/name」第一段）。
+     *
+     * **只查测试文件** —— 那是被 CI 直接跑的代码，漏声明会让 CI 立刻红，
+     * 正是这次踩的坑。
+     *
+     * 这段注释里刻意不写「块注释结束符」那三个字符：写进去会**提前闭合**
+     * 下面的注释，后面的代码被当代码解析，报一个位置完全对不上的
+     * 「Unexpected dot」。踩过一次。 */
+    const testFiles = listTestFiles()
+    const missing = new Map<string, string>()
+
+    for (const file of testFiles) {
+      const code = readFileSync(join(here, file), 'utf8')
+      for (const m of code.matchAll(/from\s+'([^']+)'/g)) {
+        const spec = m[1]
+        // 只看裸包名：'./x' '../x' '@/x' 是本仓库的，跳过
+        if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('@/')) continue
+        // node: 内置模块
+        if (spec.startsWith('node:')) continue
+        const name = spec.startsWith('@')
+          ? spec.split('/').slice(0, 2).join('/')
+          : spec.split('/')[0]
+        // 仓库内的 @config/ 之类别名（vite alias），已由 @/ 覆盖
+        if (!declared.has(name) && !isNodeBuiltin(name)) {
+          missing.set(name, `${missing.get(name) ?? ''} ${file}`.trim())
+        }
+      }
+    }
+
+    expect(
+      [...missing.entries()].map(([n, where]) => `${n}（被 ${where} import，但没在 package.json 里声明）`),
+      '这些包没在 package.json 里声明 —— 本机 node_modules 里有是巧合，别人 clone 下来会崩',
+    ).toHaveLength(0)
+  })
+
+  it('package.json 里声明的依赖都真实存在（防手滑写错包名）', () => {
+    const p = JSON.parse(read('package.json'))
+    const lock = JSON.parse(read('package-lock.json'))
+    /* 注意回调参数**不能也叫 `p`** —— 外层的 `p` 是 package.json，
+       内层 shadow 掉之后 `p.packages` 会被当成字符串的 .packages，
+       TS 报 `Unexpected "."`。
+       这类错误的特点是**整个套件加载失败、一条用例都不跑** ——
+       摘要里只显示「Tests 162 passed」，看起来像通过。 */
+    const lockNames = new Set(
+      Object.keys(lock.packages).map((path) => path.replace(/^.*node_modules\//, '')),
+    )
+    for (const name of Object.keys(p.devDependencies ?? {})) {
+      expect(lockNames.has(name), `${name} 在 package.json 里声明了，但 lock 里没有`).toBe(true)
+    }
+  })
+})
+
+/** node 内置模块名单（够用即可，不追求完整） */
+function isNodeBuiltin(name: string): boolean {
+  return (
+    /^(assert|buffer|child_process|crypto|events|fs|http|https|module|os|path|process|stream|string_decoder|timers|url|util|zlib|node:)/.test(
+      name,
+    )
+  )
+}
+
+/** 列出所有测试文件（相对仓库根） */
+function listTestFiles(): string[] {
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const name of readdirSync(join(here, dir))) {
+      const full = join(dir, name)
+      const stat = statSync(join(here, full))
+      if (stat.isDirectory()) walk(full)
+      else if (/\.test\.(ts|tsx)$/.test(name)) out.push(full.replace(/\\/g, '/'))
+    }
+  }
+  walk('src')
+  return out
+}
