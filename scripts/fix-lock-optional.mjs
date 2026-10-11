@@ -83,6 +83,19 @@ function parentPathOf(p) {
  *
  * 早先只处理 A，B 漏了 —— 于是「lock 看着完整（version 都在）」
  * 但 `npm ci` 照样失败。判据因此不能只看 `!v.version`。
+ *
+ * **C. 缺整条平台条目**（本机平台的兄弟条目根本没被收录）
+ *   ```
+ *   lock 里只有：lightningcss-win32-x64-msvc
+ *   但它声明了 11 个平台：linux-x64-gnu / darwin-arm64 / …
+ *   ```
+ *   症状：`npm ci` **在这台机器上完全正常**（装的是本机平台那份），
+ *   但 CI 跑在 Ubuntu 上 →
+ *     `Error: Cannot find module '../lightningcss.linux-x64-gnu.node'`
+ *   然后 esbuild/vite 打包失败。
+ *
+ *   C 与 A/B 的区别：A/B 是「条目在但字段缺」，C 是「条目根本不在」——
+ *   同一个 `lock:fix` 必须一起处理，否则「本机绿的、CI 红的」没完。
  */
 const todo = []
 for (const [p, v] of Object.entries(lock.packages ?? {})) {
@@ -98,6 +111,43 @@ for (const [p, v] of Object.entries(lock.packages ?? {})) {
   // 少数条目靠 `link` 或本地路径，那类已在上面对掉。
   if (!v.resolved && !v.link) {
     todo.push({ path: p, name: pkgNameOf(p), version: v.version, why: '缺 resolved/integrity' })
+  }
+}
+
+/* ---------- C：补齐缺失的平台二进制条目 ----------
+ *
+ * 遍历所有声明了 `optionalDependencies` 的包，把lock 里缺失的兄弟平台加进去。
+ *
+ * 判据：某包的 optionalDependencies 里列了 N 个平台，
+ * 而 lock 的 `node_modules/` 下只收录了其中一部分 → 缺的那部分就是 C 类。
+ *
+ * 只处理「同名 + 看起来是平台后缀」的 optional 依赖
+ * （esbuild-* / lightningcss-* / @rollup/rollup-* / @esbuild/*），
+ * 避免把普通的可选功能依赖（fsevents 之类）也塞进去 ——
+ * 那些是**故意不给某些平台装**的，加进 lock 反而会让 npm ci 报错。*/
+const PLATFORM_SUFFIX =
+  /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|lightningcss-|esbuild-|rollup-|@swc\/core-|@tailwindcss\/oxide-)/
+
+for (const [p, entry] of Object.entries(lock.packages ?? {})) {
+  if (!entry?.optionalDependencies) continue
+  const parentName = pkgNameOf(p)
+
+  for (const [optName, optVer] of Object.entries(entry.optionalDependencies)) {
+    if (typeof optVer !== 'string' || !PLATFORM_SUFFIX.test(optName)) continue
+
+    // 顶层路径：跟父包同级（多数情况）或挂在父包自己的 node_modules 下
+    const candidates = [`node_modules/${optName}`, `${p}/node_modules/${optName}`]
+    if (candidates.some((c) => lock.packages[c])) continue
+
+    // 只补一个位置：顶层。嵌套位置 npm 会自己解析。
+    todo.push({
+      path: `node_modules/${optName}`,
+      name: optName,
+      version: optVer,
+      why: '缺整条平台条目（C）',
+      dev: entry.dev,
+      from: parentName,
+    })
   }
 }
 
@@ -144,7 +194,7 @@ for (const item of todo) {
       continue
     }
 
-    /* 情况 A：空壳条目，整条重建。 */
+    /* 情况 A（空壳）与 C（缺整条）：都按 registry 元数据重建。 */
     const entry = {
       version: meta.version,
       resolved: meta.dist.tarball,
@@ -158,8 +208,9 @@ for (const item of todo) {
     if (meta.os) entry.os = meta.os
     entry.optional = true
     /* dev 跟着父包走：esbuild 是 vitest 的传递依赖 → 纯 dev。
-       标错会让 `npm ci --omit=dev` 装一堆用不到的东西。*/
-    if (lock.packages[parentPathOf(p)]?.dev) entry.dev = true
+       标错会让 `npm ci --omit=dev` 装一堆用不到的东西。
+       C 类的 dev 从声明它的那一层拿（父包可能不存在于顶层）。*/
+    if (item.dev ?? lock.packages[parentPathOf(p)]?.dev) entry.dev = true
     lock.packages[p] = entry
     fixed++
   } catch (e) {
@@ -194,4 +245,25 @@ if (stillBroken.length) {
   }
   process.exit(1)
 }
-console.log('校验通过：所有条目都有 version + resolved')
+
+/* C 类复查：声明了平台二进制的包，lock 里必须**每一个平台都有条目**。
+   漏一个的表现是「本机绿的、CI 红的」—— 本机装的是本机平台那份，
+   别的平台那条根本没进lock，于是构建时报
+   `Cannot find module '../xxx.linux-x64-gnu.node'`。 */
+const missingPlatform = []
+for (const [p, entry] of Object.entries(lock.packages)) {
+  if (!entry?.optionalDependencies) continue
+  for (const [optName, optVer] of Object.entries(entry.optionalDependencies)) {
+    if (typeof optVer !== 'string' || !PLATFORM_SUFFIX.test(optName)) continue
+    const has = lock.packages[`node_modules/${optName}`] || lock.packages[`${p}/node_modules/${optName}`]
+    if (!has) missingPlatform.push(`${pkgNameOf(p)} → 缺 ${optName}@${optVer}`)
+  }
+}
+if (missingPlatform.length) {
+  console.error(`\n还有 ${missingPlatform.length} 个平台条目没进 lock：`)
+  for (const m of missingPlatform.slice(0, 12)) console.error(`  ${m}`)
+  console.error('\n（CI 会在别的平台上失败：Cannot find module ...）')
+  process.exit(1)
+}
+
+console.log('校验通过：所有条目都有 version + resolved，且平台二进制齐全')

@@ -1136,3 +1136,97 @@ describe('Node 版本要求', () => {
     ).toBeGreaterThanOrEqual(Number(min))
   })
 })
+
+/* ==================================================================
+ * lock 文件的跨平台完整性
+ * ==================================================================
+ *
+ * ## 这组在防什么
+ *
+ * **「本机绿的、CI 红的」里最难查的一种：平台二进制。**
+ *
+ * 2026-10-11 第三次 CI 失败：
+ *
+ * ```
+ * Error: Cannot find module '../lightningcss.linux-x64-gnu.node'
+ * ```
+ *
+ * 原因：`lightningcss` 声明了 11 个平台的 optionalDependencies，
+ * 但 lock 里**只收录了 Windows 那一个**
+ * （`lightningcss-win32-x64-msvc`）。
+ *
+ * 于是：
+ * - **本机**（Windows）：`npm ci` 装到本机平台那份，一切正常
+ * - **CI**（Ubuntu）：lock 里没有 linux-x64-gnu 那条 → 装不到 →
+ *   vite 打 CSS 时报「找不到模块」
+ *
+ * 也就是说 **lock 缺平台条目这件事，在开发机上完全不可见**。
+ * 只有当有人换操作系统、或者 CI 换镜像时才暴露 ——
+ * 而那通常是「上架前最后一天」。
+ *
+ * ## 判据
+ *
+ * 声明了平台二进制的包，lock 里必须**每个平台都有条目**。
+ * 不比较「装了几个」，只比较「该有几个、有几个」。
+ */
+describe('lock 的跨平台完整性', () => {
+  const lock = () => JSON.parse(read('package-lock.json'))
+
+  /* 只认这些前缀：它们是**按平台分发二进制**的包。
+     普通的可选功能依赖（fsevents 只在 mac 上）不在此列 ——
+     那些是故意不给某些平台装的，加进 lock 反而会让 npm ci 失败。*/
+  const PLATFORM_PKG =
+    /^(?:@(?:esbuild|rollup)\/rollup-|@esbuild\/|lightningcss-|esbuild-|rollup-|@tailwindcss\/oxide-)/
+
+  it('声明了平台二进制的包，lock 里每个平台都有条目', () => {
+    const l = lock()
+    const missing: string[] = []
+
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      const opts = entry?.optionalDependencies as Record<string, string> | undefined
+      if (!opts) continue
+      const parent = path.replace(/^.*node_modules\//, '')
+      for (const [name, ver] of Object.entries(opts)) {
+        if (typeof ver !== 'string' || !PLATFORM_PKG.test(name)) continue
+        const inLock = l.packages[`node_modules/${name}`] || l.packages[`${path}/node_modules/${name}`]
+        if (!inLock) missing.push(`${parent} 声明了 ${name}@${ver}，但 lock 里没有`)
+      }
+    }
+
+    expect(
+      missing,
+      'lock 缺平台条目 → 本机（当前平台）正常，别的平台上构建失败。跑 npm run lock:fix 补齐',
+    ).toHaveLength(0)
+  })
+
+  it('lock 里的每个条目都有 resolved 与 integrity（npm ci 靠它们下载）', () => {
+    const l = lock()
+    const bad: string[] = []
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      if (path === '' || !entry || typeof entry !== 'object') continue
+      if ((entry as { link?: boolean }).link) continue
+      const e = entry as Record<string, unknown>
+      if (!e.version) bad.push(`${path}：没有 version`)
+      else if (!e.resolved) bad.push(`${path}@${e.version}：没有 resolved`)
+    }
+    expect(bad.slice(0, 10), `共${bad.length} 个条目不完整`).toHaveLength(0)
+  })
+
+  /* 平台条目必须带 os / cpu —— 靠这两个字段 npm 才知道「本机装不上就跳过」。
+     少了它们，npm 会尝试安装所有平台，然后报
+     `notsup Valid os: aix / Actual os: win32` 整个安装失败。 */
+  it('平台二进制条目带 os / cpu 字段（否则 npm 会尝试安装所有平台）', () => {
+    const l = lock()
+    const bad: string[] = []
+    for (const [path, entry] of Object.entries<Record<string, unknown>>(l.packages)) {
+      const name = path.replace(/^.*node_modules\//, '')
+      if (!PLATFORM_PKG.test(name)) continue
+      const e = entry as Record<string, unknown>
+      if (!e?.version) continue
+      if (!e.optional) bad.push(`${name}：缺 optional（装不上时会中断整个 npm ci）`)
+      // 部分包（如 esbuild）用 cpu/os，部分只标其一
+      if (!e.os && !e.cpu) bad.push(`${name}：缺 os 与 cpu`)
+    }
+    expect(bad.slice(0, 10)).toHaveLength(0)
+  })
+})
