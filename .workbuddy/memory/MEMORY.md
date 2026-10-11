@@ -101,6 +101,23 @@
 - CI：`.github/workflows/ci.yml`（PR/push 跑 测试→构建→产物自检→上架资源+图标尺寸检查）。
   **Node 22 + actions v5，两个 workflow 必须一致**（不一致就是「CI 绿的、Release 红的」）。
 
+
+## 社区目录的搜索与元数据（2026-10-11 查证）
+- **搜索只索引 name / author / description**（obsidian-releases README 原文），
+  数据来自 `community-plugins.json`。README 只用于详情页，**不参与搜索**。
+- `community-plugins.json` 是 **Obsidian Bot 每小时从目录数据库镜像**的，
+  **别手改它提 PR**（会被覆盖）。旧文档让 PR 那个文件的做法已过期。
+- 元数据（**short / long description**、图标、分类、截图）在
+  **目录后台 → Plugins → 条目 → Edit listing → Save**。
+  描述另一条来源是**仓库 HEAD 的 `manifest.json`**（提交表单里没有描述字段），
+  两边写成同一份最省事。
+- 后台的 `...` 菜单还有两个省事的入口：
+  **Request review**（立刻重扫，不用发新版）、
+  **Review branch**（发版前先试扫）。
+- 描述硬规则：≤250 字符、以 `.!?` 收尾、**不得含 Obsidian**（error）、
+  不以插件名开头、不出现 this plugin/the plugin。**不限语言**，中英混排可以。
+  ⚠️ 现在是 243 字符，只剩 7 字符余量。
+
 ## 社区目录的显示机制（提 PR 前必看）
 - **列表页与详情页顶部那段描述 = `manifest.json` 的 `description`**。
   社区目录以国际用户为主，**必须是英文**。
