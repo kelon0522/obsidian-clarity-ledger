@@ -52,18 +52,31 @@
   且只对**按平台分发二进制**的包生效（esbuild / rollup / lightningcss /
   @tailwindcss/oxide）—— 普通可选依赖（fsevents 只在 mac）不能加进 lock。
 
-## 审核报「lockfile is out of date」= lock 不是 npm 写的（2026-10-11 定论）
-- 判定方式：审核器**跑一遍 `npm install` 再看 lock 有没有变**。
-  只要 lock 不是 npm 亲手序列化的，就报过期 ——
-  **哪怕 JSON 语义完全一样、`npm ci` 能装、CI 全绿**。
-- 本次真根因：`scripts/fix-lock-optional.mjs` 用
-  `cur.resolved = ...; cur.integrity = ...` **就地补字段**，
-  属性被追加到条目末尾。npm 的规范顺序是
-  `version, resolved, integrity, dev, license, dependencies, engines`。
-- 完整 `npm install` 重写 = **2035 增 / 2035 删、纯换字段顺序**。
-- **以后 `npm run lock:fix` 跑完，必须再让 npm 完整重写一次 lock 才算完。**
-- 自检方法（不依赖审核器）：干净目录 `npm install --package-lock-only`
-  后 `cmp` 与仓库里的 lock —— 必须逐字节一致。
+## 审核报「lockfile is out of date」= npm 大版本不同（2026-10-11 真定论）
+- **审核器就在明面上**：`obsidianmd/obsidian-workflows`（社区目录的扫描流程）。
+  依赖安装逻辑在 `src/deps.ts`：按 lockfile 挑包管理器，npm → **`npm ci`**；
+  「dependency installation failed」= `npm ci` 返回非 0。
+  构建跑 `package.json` 里第一个存在的脚本：`build` → `build:plugin` → `compile`。
+  **runner 默认 Node 24（= npm 11）**，最低 20。
+- **真根因：npm 10 与 npm 11 写进 lock 的条目不一样。**
+  同一份 package.json：npm 10 解析出 220 条，npm 11 解析出 **221** 条，
+  多的是 `node_modules/@napi-rs/lzma-linux-x64-gnu`（`rollup` 在 Linux 上的
+  brotli 依赖）。**npm 10 不写、npm 11 写。**
+  → 扫描器跑 `npm install` 发现少这一条 = 「lock 过期」。
+- **所以 lock 必须用与扫描器同版本的 npm 生成**：
+  `npx -y npm@11 install --package-lock-only`。
+- ⚠️ 这条在本机**完全隐身**：npm 10 + Windows、CI（Node 22 → npm 10）全都看不见。
+  上一版去修「字段顺序」，方向本身就错了。
+- **自检配方**（不依赖审核器，两步都要过）：
+  ```
+  npx -y npm@11 install --package-lock-only --ignore-scripts   # 再 cmp，必须逐字节一致
+  npx -y npm@11 install --package-lock-only --ignore-scripts --os=linux --cpu=x64 --libc=glibc
+  ```
+- **验证构建也要换 Node 版本**：`npx -y node@24 -p process.execPath` 拿到 node24
+  二进制，塞进 PATH 再 `npm run build` —— 审核 runner 是 24，本机是 22。
+- 平台二进制条目的「齐全性」正则（`scripts/fix-lock-optional.mjs`、
+  `src/config/alias.test.ts`）**必须把 `@napi-rs/lzma-` 也列进去**，
+  否则这一整类缺失永远查不出来。
 
 ## 官方 lint 插件可以本地跑（别再靠猜）
 - `eslint-plugin-obsidianmd`（Obsidian 官方，0.4.2）就是审核的那套规则。
