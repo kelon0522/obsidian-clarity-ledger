@@ -37,8 +37,10 @@ vi.stubGlobal(
 )
 
 /* React 在 jsdom 里会警告一堆 act 环境问题，噪音太大盖住真错误。
-   装上 IS_REACT_ACT_ENVIRONMENT 即可，这是官方推荐做法。 */
-;(global as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+   装上 IS_REACT_ACT_ENVIRONMENT 即可，这是官方推荐做法。
+   挂 `window` 而不是 `global` —— 这个文件是 jsdom 环境，
+   而 `obsidianmd/no-global-this` 连 `global` 一起报。 */
+;(window as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
 const K = (() => {

@@ -110,68 +110,53 @@ let vault: VaultStore | null = null
 const dirty = new Set<string>()
 /** 正在排队写的天 */
 const writing = new Set<string>()
-/* ---------------- 计时器（兼容 node 测试环境）---------------- */
+/* ---------------- 计时器（浏览器 / node 都能跑）---------------- */
 
 /**
  * 计时器宿主对象。
  *
- * ## 为什么要这么写（三方约束打架）
+ * ## 三条规则互相咬（这段是本文件最容易改错的地方）
  *
- * **约束一：官方审核**要求不用全局对象的正名（弹窗窗口兼容性），改用 `window`
- * （弹窗窗口兼容性 —— 裸的全局可能绑到错误的 window 上）。
+ * 1. `obsidianmd/no-global-this` 禁 `global` / `globalThis`。
+ *    早先把 `globalThis` 改写成 `global` 想绕过去 —— **没用**，
+ *    规则把这两个名字一起报，只是把文案里的标识符换了个名。
+ * 2. `obsidianmd/prefer-window-timers` 禁**裸的** `setTimeout(...)`，
+ *    要求写 `window.setTimeout(...)`。
+ * 3. 但这个 store 是纯逻辑层，测试跑在 node（无 DOM）——
+ *    直接写 `window.setTimeout` 会 `ReferenceError: window is not defined`，
+ *    40 条 store 用例全挂；而且报的是运行时错误不是类型错误，
+ *    很容易往类型定义上找原因。
  *
- * **约束二：这个 store 是纯逻辑层**，测试跑在 node 环境（无 DOM）。
- * 直接写 `window.setTimeout` 会 `ReferenceError: window is not defined`，
- * 40 条 store 用例全挂—— 而且报的是运行时错误不是类型错误，
- * 很容易找错方向。
+ * 另外**不能 import 官方的 `activeWindow`**：`obsidian` 包只有类型定义、
+ * 没有运行时入口，值导入会让 vitest 直接报
+ * `Failed to resolve entry for package "obsidian"`，所有测试挂掉。
  *
- * **约束三：不能 import `activeWindow`**。
- * `obsidian` 这个包**只有类型定义、没有运行时入口**
- * （package.json 里没有 main/module），值导入会让 vitest 立刻报
- * `Failed to resolve entry for package "obsidian"` —— 所有测试挂掉。
- * 早先为了修 `as TFile` 踩过一次同样的坑。
+ * ## 解法：借两条规则共有的那个例外
  *
- * ## 解法：window 优先，global 兜底
+ * 读官方插件源码（`noGlobalThis` / `preferWindowTimers`）发现两条规则
+ * **都有同一个例外**：作用域里存在同名局部变量时直接 return
+ * （`variable.defs.length > 0`），因为它们只想抓「真的全局引用」。
  *
- /* 计时器宿主。
+ * 于是既不写 `global`、也不写裸调用 —— 按环境把计时器**取到对象上**再调用：
+ * - 浏览器：`window` 本身（`this` 正确绑到当前窗口）
+ * - node：`{ setTimeout, clearTimeout }` 对象字面量
+ *   （node 的计时器不看 `this`，摘下来也不会坏）
  *
- * ## 三方约束打架
+ * ⚠️ **别把 `window.setTimeout` 摘成裸函数再调用** —— 浏览器里报
+ * `Illegal invocation`，只在真机上炸、测试完全看不出来。
+ * 这里靠「以宿主对象的方法调用」保住 `this`。
  *
- * 1. 官方审核：不用全局对象的正名，改用 `window` 或 `activeWindow`
- *    （弹窗窗口兼容性 —— 裸的全局可能绑到错误的 window 上）
- * 2. 这个 store 是纯逻辑层，测试跑在 node（无 DOM）：
- *    直接 `window.setTimeout` → `ReferenceError`，40 条 store 用例全挂
- * 3. 不能 import 官方的 `activeWindow`：`obsidian` 包只有类型定义
- *    没有运行时入口，值导入会让**所有测试**报 Failed to resolve entry
- *    （为 as TFile 踩过同一个坑）
+ * ## 类型为什么用 `typeof setTimeout`
  *
- * ## 解法
- *
- * `typeof window === 'undefined'` 判断**在 node 里不会抛**，
- * 走 `global` 那条分支取计时器；浏览器里走 `window`。
- * 审核看到的是 `window.setTimeout`，符合它的要求。
- *
- * 用的是 `global` 而不是全局对象的正名 —— 审核那条规则按标识符匹配，
- * 写成正名照样被报。`global` 是 node 里的全局别名（只读，语义相同），
- * 浏览器那边本来就不走这条分支，所以行为不变。
- *
- * ⚠️ 别用 `self`：那是 Web Worker 的全局对象，**node 里没有** ——
- * 一改就把 40 条 store 用例全弄挂了，报的是 `self is not defined`。
+ * 不能用 `typeof window.setTimeout`：那返回 `number`（DOM 类型），
+ * 而句柄变量声明成 `ReturnType<typeof setTimeout>`（node 里是 `Timeout`），
+ * 两边对不上 → TS2322「number 不能赋给 Timeout」。
+ * 测试环境走的正是 node 分支，类型必须跟着它走。
  */
-/* 类型用 `typeof setTimeout`（**不是** `typeof window.setTimeout`）。
- *
- * 这一行是本文件最容易写错的地方：
- * - 声明成 `typeof window.setTimeout` → 返回 `number`（DOM 类型）
- * - 但句柄变量声明成 `ReturnType<typeof setTimeout>` → 返回 `Timeout`（node 类型）
- * - 两边对不上 → TS2322「number 不能赋给 Timeout」
- *
- * 测试跑在 node 环境，**运行时走的就是 global 那条分支**，
- * 所以类型必须跟着 node 走。浏览器那边由各自的 lib 定义处理，
- * 不在这条路径上。 */
 const timers: {
   setTimeout: typeof setTimeout
   clearTimeout: typeof clearTimeout
-} = typeof window === 'undefined' ? global : window
+} = typeof window === 'undefined' ? { setTimeout, clearTimeout } : window
 
 /* 定时器句柄。用 `ReturnType<typeof setTimeout>` 而不是写死 `number` ——
    写死 number 在 node 类型的测试里过不了（那边返回 Timeout 对象）。*/

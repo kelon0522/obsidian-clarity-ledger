@@ -66,7 +66,7 @@ export class LedgerSettingTab extends PluginSettingTab {
        直接createEl 出来的 h2 不跟主题，视觉上会突兀。*/
     new Setting(containerEl).setName('清晰力 · 每日规划').setHeading()
     containerEl.createEl('p', {
-      text: '数据存在 vault 的 Markdown 文件里，能全局搜索、能 git、能跟着同步走。',
+      text: '数据存在 vault 的 Markdown 文件里，能全局搜索、能 Git、能跟着同步走。',
       cls: 'cl-settings-note',
     })
 
@@ -103,19 +103,20 @@ export class LedgerSettingTab extends PluginSettingTab {
       })
     this.renderHint(tplHint, cfg.folder, cfg.nameTemplate, cfg.nameTemplate)
 
-    /* 这三行用的是 `containerEl.createEl(...)`，不是 `document.createElement`。
-     * 审核的 `prefer-create-el` 规则报过它们，**但那是误判** ——
-     * 规则把 `xxx.createEl` 也算成了 `document.createElement`。
-     * 全文 grep 过 `document.createElement`，只在测试文件里出现（那里有 jsdom 环境）。
-
-       保持 `createEl` 不改：它是 Obsidian 给 HTMLElement 加的扩展，
-       `setText` 会正确转义文本节点；用 createElement 就得自己配 textContent，
-       反而更容易写出 XSS。 */
-    const help = containerEl.createEl('div', { cls: 'cl-settings-tokens' })
-    help.createEl('span', { text: '可用占位符：' })
+    /* 用 `createDiv` / `createSpan` 这种**具体 helper**，不要 `createEl('div')`。
+     *
+     * 审核的 `prefer-create-el` 报的正是这个：
+     *   Use 'containerEl.createDiv(...)' instead of 'containerEl.createEl('div', ...)'
+     *
+     * ⚠️ 这里曾经写着「规则把 `createEl` 误判成了 `document.createElement `」——
+     * **那是错的**。规则要求的是用现成的 `createDiv` / `createSpan`
+     * （更短、而且参数一律走 options 对象）。本仓库里从来没有
+     * `document.createElement`，别顺着那条错误注释去找。 */
+    const help = containerEl.createDiv({ cls: 'cl-settings-tokens' })
+    help.createSpan({ text: '可用占位符：' })
     for (const [tok, desc] of TOKEN_HELP) {
       const b = help.createEl('code', { text: tok })
-      b.createEl('span', { text: ' ' + desc + '　' })
+      b.createSpan({ text: ' ' + desc + '　' })
     }
 
     /* ---------- 启动时打开 ---------- */

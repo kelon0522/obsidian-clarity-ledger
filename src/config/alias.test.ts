@@ -1436,30 +1436,37 @@ describe('社区目录的自动审核规则', () => {
     expect(code, 'as TFile 是强行断言，改用 instanceof 或类型守卫').not.toMatch(/\bas\s+TFile\b/)
   })
 
-  /* ---------- Warning：globalThis ---------- */
+  /* ---------- Warning：globalThis / global ---------- */
 
-  it('**整个仓库**都不用 globalThis（popout 兼容性）', () => {
-    /* 原来这条只查「除 store 和 test-setup 之外的地方」，
-     * 因为那两处用 `globalThis` 是为了兼容 node 测试环境
-     * （那边没有 `window`）。
+  it('**整个仓库**都不用 globalThis / global（popout 兼容性）', () => {
+    /* 审核的 `obsidianmd/no-global-this` **按标识符匹配** ——
+     * 它不区分「是不是必要」，而且 `globalThis` 与 `global` **都报**
+     * （文案是「Avoid using 'global'. Use 'window' or 'activeWindow'」）。
      *
-     * 但审核的规则是**按标识符匹配**的 —— 它不区分「是不是必要」。
-     * 于是改用 `self`：node 20+ 与浏览器里都有，含义相同，
-     * 两个文件现在都能躲开这条规则。
+     * 这一点是本项目栽过的坑：早先把 `globalThis` 改写成 `global`，
+     * 以为躲掉了规则，实际只是把报出来的标识符换了个名。
+     * 用官方 eslint 插件本地复现才看清。
      *
-     * 所以这条断言没有白名单了 —— **全仓库零 `globalThis`**。*/
+     * 所以两种写法一起清零。需要全局对象时写 `window`；
+     * node 测试环境里没有 `window` —— 那说明**那个场景本来就不需要
+     * 全局对象**（比如纯逻辑 store，计时器直接用裸的 `setTimeout`）。
+     *
+     * ⚠️ 别用 `self`：那是 Web Worker 的全局对象，**node 里没有**，
+     * 换了 40 条 store 用例全挂（`self is not defined`）。
+     * 也不能 import 官方的 `activeWindow` —— obsidian 包只有类型定义、
+     * 没有运行时入口，值导入会让所有测试报 Failed to resolve entry。*/
     const offenders: string[] = []
     for (const file of listSourceFiles()) {
       const code = stripComments(readFileSync(join(here, file), 'utf8'))
-      if (/\bglobalThis\b/.test(code)) offenders.push(file)
+      if (/\bglobalThis\b|\bglobal\b/.test(code)) offenders.push(file)
     }
     expect(
       offenders,
-      `这些文件还用了 globalThis → 审核会报「Avoid using 'globalThis'」。\n` +
-        `改成 \`typeof window === 'undefined' ? self : window\`：\n` +
-        `  - node 测试环境走 self（有 window 才用 window）\n` +
-        `  - 浏览器走 window（弹窗兼容性）\n` +
-        `不能 import 官方的 activeWindow —— obsidian 包只有类型定义没有运行时入口。\n` +
+      `这些文件还用了 globalThis / global → 审核会报「Avoid using 'global'」。\n` +
+        `  - 需要全局对象 → 写 \`window\`\n` +
+        `  - node 环境没有 window → 说明那里不需要全局对象，\n` +
+        `    计时器直接用裸的 \`setTimeout\` / \`clearTimeout\`\n` +
+        `  - 别用 \`self\`（Web Worker 的全局对象，node 里没有）\n` +
         offenders.join('\n'),
     ).toHaveLength(0)
   })

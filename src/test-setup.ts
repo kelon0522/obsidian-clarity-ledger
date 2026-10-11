@@ -1,61 +1,37 @@
 /**
  * jsdom 缺的东西的集中补齐。
  *
- * ## ResizeObserver
+ * ## 这个文件为什么要到处判断 `window` 在不在
  *
- * **jsdom 不实现 ResizeObserver** —— 构造器不存在，
- * `new ResizeObserver(...)` 直接抛 `ReferenceError`。
+ * 它走 `setupFiles`，**对 `environment: 'node'` 的测试也生效** ——
+ * 而默认环境就是 node（见 `vitest.config.ts`），
+ * 只有顶部写了 `@vitest-environment jsdom` 的文件才有 DOM。
+ * 所以每项都先判断 `typeof window`。
  *
- * 轨道高度自适应靠它实测固定开销（待办几条、回顾多长都影响），
- * 所以没有它整个 LedgerView 挂不起来 —— 表现为冒烟测试全部报
- * 「ResizeObserver is not defined」，而真机上完全正常。
+ * ⚠️ **别用 `global` / `globalThis` 绕这个判断。**
+ * 这里曾经写过 `typeof window === 'undefined' ? global : window`，
+ * 理由是「node 环境下也要拿到全局对象」。但官方规则
+ * `obsidianmd/no-global-this` **把 `global` 一起报**（文案是
+ * 「Avoid using 'global'. Use 'window' or 'activeWindow'」）——
+ * 换来换去只是把报的标识符从 `globalThis` 改成 `global`，
+ * 审核那条 Warning 一次都没消掉。
  *
- * stub 的 `observe` **什么都不做**（不立刻回调）：真实浏览器里
- * ResizeObserver 是异步回调的。测试要的是「能挂载」，
- * 高度算得对不对由 `track-height.test.ts` 负责。
+ * 正确的心态是：**没有 `window` 就说明这个环境根本不需要补 DOM**，
+ * 那就不补。需要全局对象的地方写 `window`。
  *
- * ## 为什么只补缺的
+ * ## 曾经补过 ResizeObserver，已删
  *
- * jsdom 大部分 API 是有的。先判断存在性再装 ——
- * 覆盖掉本来能工作的实现只会引入新的偏差。
- *
- * 注意这个文件走 setupFiles，**对 `environment: 'node'` 的测试也生效**，
- * 那儿没有 `window`，所以每项都要判断。
+ * 早先这里装过一个 `ResizeObserver` stub —— 轨道高度自适应靠它
+ * 实测「视口高 − 固定开销」。后来高度改成 CSS flex 算（`flex-1 min-h-0`），
+ * 全仓库再没有一处用 ResizeObserver，`ledger.smoke.test.tsx` 里那条
+ * 「view 源码不许出现 ResizeObserver」的断言就是那次改动的守卫。
+ * 死掉的 stub 留着只会让人以为还在用。
  */
-
-/* 拿全局对象来挂 stub。
- *
- * 这个文件走 setupFiles，**对 `environment: 'node'` 的测试也生效**，
- * 那边根本没有 `window` —— 所以不能直接写 `window.ResizeObserver`。
- *
- * 写法与 `store/index.ts` 里的计时器宿主一致：
- * - `typeof window === 'undefined'` 在 node 里不抛，走 `global` 那条分支
- * - 浏览器里走 `window`（弹窗兼容性）
- *
- * `global` 是 node 的全局别名（只读，语义相同）；它绕开了审核那条
- * 按标识符匹配的规则。⚠️ 别用 `self` —— 那是 Web Worker 的全局对象，
- * node 里没有，会让所有走 node 环境的测试挂掉。
- *
- * 变量名从 `g` 改成 `host` —— 单字母名在一堆全局引用里很容易看错。 */
-const host = (typeof window === 'undefined' ? global : window) as unknown as Record<
-  string,
-  unknown
->
-
-
-if (typeof host.ResizeObserver === 'undefined') {
-  class ResizeObserverStub {
-    observe(): void {
-      /* 刻意不回调 —— 真实实现是异步的 */
-    }
-    unobserve(): void {}
-    disconnect(): void {}
-  }
-  host.ResizeObserver = ResizeObserverStub
-}
 
 const hasWindow = typeof window !== 'undefined'
 
+/* jsdom 各个版本对 `matchMedia` 的支持不一样，时有时无 ——
+   先判断存在性再装。覆盖掉本来能工作的实现只会引入新的偏差。 */
 if (hasWindow && typeof window.matchMedia === 'undefined') {
   window.matchMedia = ((query: string) => ({
     matches: false,
