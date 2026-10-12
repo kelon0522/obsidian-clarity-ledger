@@ -909,7 +909,23 @@ describe('社区目录的多语言呈现', () => {
 
   it('description 是英文（社区列表面向国际用户）', () => {
     const d = manifest().description as string
-    // 中文只应该出现在书名号里（《认知觉醒》），别的地方不该有汉字
+    /* **一个汉字都不能有** —— 注意这里没有「书名号里可以例外」这回事，
+     * 断言就是纯计数。（早先这句注释写的是「中文只应该出现在书名号里」，
+     * 与代码不符，会把人带进坑里。）
+     *
+     * 2026-10-11 真踩过：为了帮中文用户搜到插件，往 description 里加了
+     * 「认知觉醒」，本机没跑测试就推了 —— CI 红三条，
+     * 报的正是 `expected 4 to be +0`（4 = 认知觉醒）。
+     *
+     * ## 中文书名该放哪（不影响中文用户搜索）
+     *
+     * - `README.md` / `README.zh-cn.md` —— 详情页下半部分渲染的就是 README，
+     *   而且这条断言对 README 是宽松的（只要求英文占多数）
+     * - **社区目录后台的 Edit listing → short description** ——
+     *   社区列表的**搜索索引是那一份**（镜像进 community-plugins.json），
+     *   跟 manifest 这段没关系
+     *
+     * 结论：manifest 这里保持纯英文，代价是零。 */
     const han = d.match(/[\u4e00-\u9fff]/g) ?? []
     expect(han.length).toBe(0)
   })
