@@ -119,17 +119,18 @@
   ⚠️ 现在是 243 字符，只剩 7 字符余量。
 
 ## description 的三条硬约定（2026-10-12 补）
-- ** 的 description 一个汉字都不能有** —— 断言是纯计数
-  （），书名号里也不行。
-  它是**面向国际用户**的，而且**不是搜索字段**。
-- **搜索字段**只有  的 name / author / description，
+- **`manifest.json` 的 description 一个汉字都不能有** —— 断言是纯计数
+  （`alias.test.ts > description 是英文`），书名号里也不行。
+  它面向国际用户，而且**不是搜索字段**。
+- **搜索字段**只有 `community-plugins.json` 的 name / author / description，
   源头是目录后台 **Edit listing → short description**。要中文关键词就改那里。
-- **中文专有名词**放 （断言宽松：英文占多数即可）+ 。
+- **中文专有名词**放 `README.md`（断言宽松：英文占多数即可）+ `README.zh-cn.md`。
   2026-10-11 往 manifest 里加「认知觉醒」→ CI 连红三条，白折腾一轮。
 
 ## 社区目录的显示机制（提 PR 前必看）
-- **列表页与详情页顶部那段描述 = `manifest.json` 的 `description`**。
-  社区目录以国际用户为主，**必须是英文**。
+- **列表页与详情页顶部那段描述**：新版目录里它是**后台可编辑的**
+  （Edit listing → short description），不再等于 `manifest.json` 的 description。
+  manifest 那份仍是提交时的初始来源，且**必须是英文**（见上一节）。
   bot 机器规则：不含 `Obsidian`/`This plugin`、以 `.`/`?`/`!`/`)` 收尾、≤250 字符。
 - **详情页只渲染 `README.md` 这一个文件**，没有「加载第二个 md」的能力。
   多语言做法（参照已上架的 Remotely Save）：
