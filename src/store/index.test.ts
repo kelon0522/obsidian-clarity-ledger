@@ -231,7 +231,10 @@ describe('待办拖到月历（跨日期移动）', () => {
   })
 
   it('拖回当天 = 原地不动（不会变成「移到末尾」的静默重排）', () => {
-    useStore.getState().moveTaskToDay(3, DAY)
+    /* 必须拿**不在末尾**的任务试：去掉守卫后它是「先移除再追加」，
+       末尾那条搬完还是同一个位置，顺序不变 —— 变异就漏了。
+       （第一条变异实测踩过：用 3（末尾）时这条断言照样绿。） */
+    useStore.getState().moveTaskToDay(1, DAY)
     expect(ids()).toEqual([1, 2, 3])
   })
 
