@@ -47,7 +47,9 @@ export function Calendar() {
     moveTaskToDay(p.id, k)
     /* 拖完立刻清通道，不能只等行的 dragend —— 任务搬走后源行会被
        React 卸载，dragend 冒泡不到根容器，payload 会一直留着：
-       之后从别处拖东西上月历，onDayOver 会把这个残留当成待办接。 */
+       1. 之后从别处拖东西上月历，onDayOver 会把这个残留当成待办接；
+       2. 行高亮（TodoList 从通道推导）跟着卡住 —— 打开目标天，
+          那条「移过来的」待办带 opacity-40 渲染，看着是灰色字体。 */
     setDragPayload(null)
   }
 

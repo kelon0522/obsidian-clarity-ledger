@@ -259,6 +259,49 @@ describe('待办拖拽规则（已完成不可拖 / 可拖到月历日期格）'
     expect(useStore.getState().db[K]!.tasks.map((t) => t.id)).toEqual([1, 2])
     act(() => fireDrag(row, 'dragend', dt))
   })
+
+  it('拖动中源行半透明（opacity-40），松手后恢复', async () => {
+    await setup({ db: dragDay() })
+    const row = document.querySelector('[data-testid="todo-list"] > div') as HTMLElement
+    const dt = fakeDT()
+
+    act(() => fireDrag(row, 'dragstart', dt))
+    expect(row.className).toContain('opacity-40')
+    act(() => fireDrag(row, 'dragend', dt))
+    expect(row.className).not.toContain('opacity-40')
+  })
+
+  /**
+   * 回归（2026-10-13 主理人截图：移过来的那条是灰字）。
+   *
+   * 高亮曾经存在 TodoList 的模块变量里、靠行的 onDragEnd 清 —— 而跨天
+   * 搬运在 drop 瞬间就把源行卸载了，dragend 到不了根容器，那个 id
+   * 永远留着。之后打开目标天，这条待办一挂载就带 opacity-40。
+   *
+   * **判据挑的是 opacity-40 而不是颜色值**：灰字是半透明的视觉结果，
+   * 不是 `text-dim`（那是已完成的灰，会同时带 ✓ 圈号和删除线）。
+   */
+  it('拖到别的日期后，目标天那条待办不是灰色（不带半透明）', async () => {
+    const K2 = otherDayKey()
+    await setup({ db: dragDay() })
+    const { useStore } = await import('@/store')
+    const row = document.querySelector('[data-testid="todo-list"] > div') as HTMLElement
+    const cell = dayCell(K2)
+    const dt = fakeDT()
+
+    act(() => fireDrag(row, 'dragstart', dt))
+    act(() => fireDrag(cell, 'dragover', dt))
+    act(() => fireDrag(cell, 'drop', dt))
+
+    // 切到目标天 —— 「移过来的」那条应该正常显示
+    act(() => useStore.getState().setCur(K2))
+    const rows = document.querySelectorAll('[data-testid="todo-list"] > div')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.textContent).toContain('没做完的')
+    expect(rows[0]!.className).not.toContain('opacity-40')
+    // 圈号还是数字（不是 ✓）—— 灰不是「已完成」那个灰
+    expect(rows[0]!.textContent).not.toContain('✓')
+  })
 })
 
   /**

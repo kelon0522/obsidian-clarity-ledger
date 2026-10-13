@@ -36,25 +36,29 @@ import { finished } from '@/core/logic'
 import type { Task } from '@/core/types'
 import { useStore } from '@/store'
 import { Hw } from '@/ui'
-import { getDragPayload, setDragPayload } from '@/dnd/shared'
+import { getDragPayload, setDragPayload, subscribeDrag } from '@/dnd/shared'
 
 const EMPTY: Task[] = []
 
-/** 正在被拖的 id。只为了样式（半透明），存在组件里不进 store */
-let draggingId: number | null = null
-const dragListeners = new Set<() => void>()
-const notifyDrag = () => dragListeners.forEach((f) => f())
-
+/**
+ * 正在被拖的待办 id（只为了样式：半透明）。
+ *
+ * **不再自己存一份模块变量，直接读跨区拖拽通道。**
+ *
+ * 曾经这里是 `let draggingId`，靠行的 onDragEnd 清掉。但跨天搬运会在
+ * drop 的瞬间把**源行卸载**，dragend 冒泡不到根容器（React 监听在根上）
+ * —— 这个 id 就永远留着。症状（2026-10-13 主理人截图）：之后再打开
+ * 目标天，那条「移过来的」待办一挂载就带着 opacity-40 渲染，
+ * 看起来是**灰色字体**，但圈号还是数字、也没有删除线。
+ *
+ * 通道（payload）的生命周期是完整的：dragstart 建、dragend 清、
+ * 各个 drop 处理里也显式清（日历那条就是为「源行被卸载」补的）。
+ * 跟着它走就不存在第二个需要同步的地方。
+ */
 function useDraggingId(): number | null {
-  const [id, setId] = useState<number | null>(draggingId)
-  useEffect(() => {
-    const fn = () => setId(draggingId)
-    dragListeners.add(fn)
-    return () => {
-      dragListeners.delete(fn)
-    }
-  }, [])
-  return id
+  const [p, setP] = useState(() => getDragPayload())
+  useEffect(() => subscribeDrag(() => setP(getDragPayload())), [])
+  return p?.from === 'todo' ? p.id : null
 }
 
 /**
@@ -238,14 +242,10 @@ function Row({ t, index }: { t: Task; index: number }) {
         setDragPayload({ id: t.id, from: 'todo' })
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', String(t.id))
-        draggingId = t.id
-        notifyDrag()
       }}
       onDragEnd={() => {
         setDragPayload(null)
-        draggingId = null
         setHintBoth(null)
-        notifyDrag()
       }}
       onDragOver={overRow}
       onDrop={dropRow}

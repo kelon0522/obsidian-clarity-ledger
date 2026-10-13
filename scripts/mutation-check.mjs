@@ -270,6 +270,18 @@ export const MUTATIONS = [
     stringTo: '',
     expectRed: ['两天都写脏'],
   },
+  {
+    /* 跨天搬运会在 drop 瞬间卸载源行 —— dragend 到不了根容器（React
+       监听在根上），这一行是唯一的兜底。去掉它有两个后果：
+       1. 通道残留：之后从别处拖东西上月历会被当成待办接
+       2. 行高亮（TodoList 从通道推导）卡住：打开目标天，那条
+          「移过来的」待办带 opacity-40 渲染 —— 主理人截图里的灰字 */
+    name: '日历 drop 后不清拖拽通道（移过来的待办会变灰）',
+    file: 'src/components/Calendar.tsx',
+    string: '    setDragPayload(null)\n',
+    stringTo: '',
+    expectRed: ['拖到别的日期后', '整条搬到那天'],
+  },
 ]
 
 /** 改文件，返回 { changed } —— changed=false 表示变异没生效（没匹配上） */

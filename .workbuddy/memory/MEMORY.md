@@ -96,7 +96,7 @@
     TS2488（tsconfig 没开 `DOM.Iterable`）只有 build 里的 tsc 拍得到。
   - ⚠️ esbuild 默认把非 ASCII 转成**大写**十六进制 `\uXXXX` 转义 ——
     用 grep 搜中文字符串永远查不到产物里的东西，要用 node 读文件。
-- 测试：`npm test`（263 用例）；`npm run mutation`（23 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+- 测试：`npm test`（265 用例）；`npm run mutation`（24 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
   - ⚠️ **`~`（wrong-assertion）不计入失败**，脚本末尾照样打印「全部 N 个变异都被抓到」——
     别只看最后一行，要 `grep ~`。`~` = 红了但不是预期关键词命中的那条，通常是
     expectRed 写窄了，或断言选错了对象（「移动类」断言别用端点元素）。
@@ -213,6 +213,18 @@
 - 写入是 250ms 防抖的 → 原来「改完直接关 Obsidian」会丢最后一次编辑。
 - 现在 `main.tsx` 的 `flushOnBlur()` 拦在 window blur / visibilitychange，立刻落盘。
 - `onunload` 是同步接口，救不了这个，只做兜底。
+
+## 拖拽的瞬时状态：只留一个来源（2026-10-13 血泪）
+- **跨天搬运在 drop 瞬间卸载源行** → `dragend` 冒泡不到根容器（React 18
+  监听器挂在根上）→ 任何「清理写在 onDragEnd 里」的模块级状态都会卡住。
+- 真实事故：TodoList 的 `draggingId`（拖拽中半透明）卡住 → 打开目标天，
+  「移过来的」待办带 `opacity-40` 渲染 = **主理人看到的灰字**。
+- **修法不是补清理，是删掉第二份状态**：高亮直接从 `dnd/shared` 的 payload
+  推导（payload 在 dragstart 建、dragend 清、各 drop 处理里也显式清）。
+- 规则：**「正在拖什么」只有 payload 一个来源**。再加「拖拽中」类状态前，
+  先问「drop 后源节点被卸载了吗」。
+- 诊断线索：`text-dim`（真·已完成：灰 + ✓ 圈号 + 删除线）vs
+  `opacity-40`（残留半透明：灰但圈号还是数字、无删除线）—— 两种灰完全不同。
 
 ## Python 资源
 - Pillow 隔离 venv：`C:/Users/kelon/.workbuddy/binaries/python/envs/icon-resize`，需 `from PIL import Image` 用它即可。
