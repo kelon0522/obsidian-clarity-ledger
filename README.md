@@ -152,20 +152,27 @@ time and confirms the right assertion goes red — run it after changing code to
 
 ## Releasing
 
+**Full runbook (in Chinese): [发布流程.md](发布流程.md).** The short version:
+
 ```bash
+npm test && npm run mutation && npm run build && npm run check:bat   # local gates
+git push origin main && gh run watch ...                             # confirm CI is green
 npm version patch     # syncs manifest.json + versions.json, tags without a v prefix
-git push --tags       # triggers .github/workflows/release.yml, which builds the Release
+git push origin main && git push origin <version>                    # git push does NOT carry tags
 ```
 
 Release attachments are `main.js`, `manifest.json`, and `styles.css`.
 
-Three rules learned the hard way:
+Four rules learned the hard way:
 
 - **The tag must exactly equal the manifest `version` and carry no `v` prefix** — the app looks
   up a tag by version; a `v` prefix means users never receive updates.
 - **A Release must not be a draft** — the app fetches attachments from *published* Releases over
   the API. The workflow pins `draft: false`.
 - **`package-lock.json` must be committed** — the pipeline runs `npm ci`, which fails without it.
+- **Regenerate the lock with the same npm major as the directory's scanner** (npm 11 / Node 24):
+  `npx -y npm@11 install --package-lock-only`. npm 10 and npm 11 write different entries, and a
+  one-entry difference is reported as a stale lockfile.
 
 Submitting to the community directory happens once; later version updates don't need another PR.
 
@@ -180,7 +187,8 @@ Methodology from *Cognitive Awakening* by Zhou Ling.
 | File | What it's for |
 |---|---|
 | [README.zh-cn.md](README.zh-cn.md) | Chinese version of this document |
-| [上架清单.md](上架清单.md) | **Step-by-step release + community submission guide** (in Chinese) |
+| [发布流程.md](发布流程.md) | **Release runbook — read this before shipping a new version** (in Chinese) |
+| [上架清单.md](上架清单.md) | Record of the **initial submission** to the community directory (in Chinese) |
 | [CHANGELOG.md](CHANGELOG.md) | Changes users can actually notice |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, and this project's conventions |
 | [手测清单.md](手测清单.md) | Manual test checklist — run it after changing core logic |
