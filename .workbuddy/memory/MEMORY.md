@@ -92,7 +92,15 @@
 
 ## 工具链速查
 - 构建：`npm run build`（esbuild 出 `main.js`+`styles.css`，产物自检 `require` 一遍，防CJS/循环依赖雷区）。
-- 测试：`npm test`（225 用例）；`npm run mutation`（18 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+  - ⚠️ `npm test` **不做类型检查** —— `[...document.querySelectorAll(...)]` 这种
+    TS2488（tsconfig 没开 `DOM.Iterable`）只有 build 里的 tsc 拍得到。
+  - ⚠️ esbuild 默认把非 ASCII 转成**大写**十六进制 `\uXXXX` 转义 ——
+    用 grep 搜中文字符串永远查不到产物里的东西，要用 node 读文件。
+- 测试：`npm test`（263 用例）；`npm run mutation`（23 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+  - 新增 describe 必须自己带 `beforeEach`/`afterEach` —— 别的 describe 的清理管不到它，
+    漏了的话旧 root 不卸载、host 越积越多，`querySelectorAll` 会数到别的用例的行。
+  - 原生 DnD 的 DOM 级测试：伪造 DataTransfer（jsdom 不实现），派发
+    **bubbling + cancelable** 的 Event 并挂 dataTransfer 属性（React 18 监听器在根容器）。
 - `npm run check:bat`：install.bat 的行尾/编码/BOM 五条断言。
 - **测试与变异测试已改为 node 驱动**（`scripts/test.mjs` / `scripts/mutation.mjs`），不再依赖 bash；
   `run-tests.sh` / `mutation.sh` 降级为回退路径，node 拿不到子进程输出时自动落到它们。
