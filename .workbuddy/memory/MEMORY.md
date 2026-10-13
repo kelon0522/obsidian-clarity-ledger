@@ -97,6 +97,12 @@
   - ⚠️ esbuild 默认把非 ASCII 转成**大写**十六进制 `\uXXXX` 转义 ——
     用 grep 搜中文字符串永远查不到产物里的东西，要用 node 读文件。
 - 测试：`npm test`（263 用例）；`npm run mutation`（23 个注入错误，验证断言有效 —— 这项目真的栽过「断言匹配注释而不是代码」的坑）。
+  - ⚠️ **`~`（wrong-assertion）不计入失败**，脚本末尾照样打印「全部 N 个变异都被抓到」——
+    别只看最后一行，要 `grep ~`。`~` = 红了但不是预期关键词命中的那条，通常是
+    expectRed 写窄了，或断言选错了对象（「移动类」断言别用端点元素）。
+  - 单点复查：`node scripts/mutation-run.mjs apply <idx>` → 跑相关测试写到
+    `.vitest-mutation.log` → `judge <idx>` → `git checkout -- <文件>`。
+  - ⚠️ 变异跑的日志**不能重定向进仓库根** —— 脏检查把它当未跟踪文件，直接拒绝启动。
   - 新增 describe 必须自己带 `beforeEach`/`afterEach` —— 别的 describe 的清理管不到它，
     漏了的话旧 root 不卸载、host 越积越多，`querySelectorAll` 会数到别的用例的行。
   - 原生 DnD 的 DOM 级测试：伪造 DataTransfer（jsdom 不实现），派发
