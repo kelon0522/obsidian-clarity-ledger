@@ -7,13 +7,16 @@
 - 桌面/Web 双版本：Web 版规则一致，在另一仓库维护。
 - **远端已建好并推送**（2026-10-11）：public，默认分支 `main`，CI 连续绿。
   本地分支也已从 `master` 改名为 `main`。
+- **已上架社区目录、在按版本迭代**：当前版本 `0.1.7`（2026-10-13 发布）。
+  日常发版走仓库根 **`发布流程.md`**（runbook：四道闸 → push → CI 绿 → version → 推 tag → 查 Release）。
 
 ## 上架资源状态（2026-10-10 已补齐）
 - `icon.png`：100×100 PNG RGBA，17.6 KB（靛蓝账本 + 工字格 + 橙色行动块）。社区列表图标。
 - `screenshot.png`：1988×1168 RGB PNG，84 KB。README 顶部。
 - README 顶部占位注释已删，改为「桌面端插件，手机装不了」的显著提示 + 英文简介。
 - 源大图 `Square_app_icon_for_an_Obsidia_2026-10-10T13-22-54.png`（1024²），保留以便改版/再裁。
-- **仓库尚未建 GitHub remote** —— 推送、首个 Release、社区目录 PR 都要主理人自己做。
+- 首个 Release 与社区目录提交都已完成（2026-10-11，过程见仓库根 `上架清单.md`）——
+  后续版本**不用再提审**，目录会自己扫每个新 Release；用户从 GitHub Release 直接拿更新。
 
 ## 上架三条硬规则（踩过才知道）
 - **tag 必须严格等于 `manifest.version` 且不带 `v` 前缀** —— Obsidian 按 version 找同名 tag。
