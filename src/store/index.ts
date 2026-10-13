@@ -87,6 +87,8 @@ interface Actions {
   moveTo(this: void, fromId: number, toIndex: number): void
   /** 键盘排序用，收 id */
   reorder(this: void, fromId: number, toId: number): void
+  /** 待办拖到月历的某一天 = 整条搬过去。目标天不存在就建档 */
+  moveTaskToDay(this: void, id: number, toKey: string): void
 
   schedule(this: void, id: number, m: number, du: number): void
   complete(this: void, id: number, m: number): void
@@ -369,6 +371,47 @@ export const useStore = create<Store>((set, get) => ({
       return { db: { ...s.db } }
     })
     markDirty(cur)
+  },
+
+  /**
+   * 待办拖到月历的某一天 = 整条搬过去（从月历日期格拖入）。
+   *
+   * 三条规则：
+   * 1. **已完成的不能搬** —— 完成判定由 act 决定（落位即完成）。
+   *    行上已经关了 draggable，store 这道是第二道：键盘、或将来的
+   *    新入口都归它管，UI 拦不住它们。
+   * 2. **拖回当天什么都不做** —— 否则会变成「移到当天末尾」的静默重排，
+   *    而用户什么都没看到。
+   * 3. **两天都要写脏** —— 源天少一条、目标天多一条，少写任何一天
+   *    都会让迁移只落一半（表现为「拖走了但文件里还在」）。
+   *
+   * 目标天不存在就建档（`day_` 会建）—— 往一个没记录的日子拖，
+   * 就是在创建那天的第一条。
+   */
+  moveTaskToDay: (id, toKey) => {
+    const cur = get().cur
+    if (toKey === cur) return
+    // 先读一次拿标题（notify 用）；set 里再校验，防状态在两步之间变过
+    const hit = get().db[cur]?.tasks.find((x) => x.id === id)
+    if (!hit || hit.act != null) return
+    set((s) => {
+      const from = s.db[cur]
+      const t = from?.tasks.find((x) => x.id === id)
+      // 这里只兜「找不到」—— act 的判断在上面那一行，两处都写会让
+      // 单行变异被掩盖（改了上面下面还在拦，测试照样绿）
+      if (!from || !t) return {}
+      from.tasks = from.tasks.filter((x) => x.id !== id)
+      from._e = nowMin()
+      const to = day_(s.db, toKey)
+      to.tasks = [...to.tasks, { ...t }]
+      to._e = nowMin()
+      // 搬来的任务可能带着排期（plan != null）—— 目标天也要守「计划列顺延」
+      reflow(to.tasks)
+      return { db: { ...s.db } }
+    })
+    markDirty(cur)
+    markDirty(toKey)
+    get().notify(`已移至 ${toKey.slice(5)}：${hit.ti}`, false)
   },
 
   /** 排期 / 挪时间。`m` 是当日第几分钟 */

@@ -49,7 +49,11 @@ This means:
 | Click ✓ on the plan track | Moves it to the **same time slot** on the actual track (not to "now") |
 | Drag a block / its bottom handle on the actual track | Changes the actual start time and duration |
 | Double-click a todo title | Renames it in place; all three views update |
+| Drag an unfinished todo onto a date in the calendar | The whole task moves to that day (the day is created if it has no record yet) |
 | Delete a block on the actual track | Clears only the actual time; the schedule stays |
+
+**Finished todos can't be dragged.** "Finished" means it landed on the actual track —
+moving it to another date would move the "done" along with it, which contradicts that rule.
 
 **Todos are the master table; the plan and actual tracks are two projections of it** — all
 three views read the same data, so there is no "changed it here, forgot to sync there".

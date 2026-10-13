@@ -220,6 +220,50 @@ export const MUTATIONS = [
       '@layer base {\n.cl-root :focus-visible {\n  outline: 2px solid var(--color-ink);\n  outline-offset: 2px;\n}',
     expectRed: ['留在 @layer 之外'],
   },
+
+  /* ---------- 待办拖拽规则（2026-10-13 新增） ----------
+     两条产品规则 + 一条数据完整性规则。每条都配了变异 ——
+     「拖了没反应」这类问题**不报错、不崩溃**，只有断言能守住。 */
+  {
+    name: '已完成待办恢复可拖（draggable 不再看 done）',
+    file: 'src/components/TodoList.tsx',
+    string: 'draggable={!done}',
+    stringTo: 'draggable',
+    expectRed: ['已完成的待办行 draggable=false'],
+  },
+  {
+    // 双保险的第二道：浏览器万一照样派发 dragstart，也不能把 id 放进通道
+    name: '去掉 dragstart 里的已完成拦截（第二道防线失效）',
+    file: 'src/components/TodoList.tsx',
+    string: '        if (done) {\n          e.preventDefault()\n          return\n        }\n',
+    stringTo: '',
+    expectRed: ['dragstart 也不建立拖拽通道'],
+  },
+  {
+    name: 'moveTaskToDay 不再拒绝已完成的待办（act != null 也能搬走）',
+    file: 'src/store/index.ts',
+    string: 'if (!hit || hit.act != null) return',
+    stringTo: 'if (!hit) return',
+    expectRed: ['已完成的待办不能搬'],
+  },
+  {
+    /* 少了这道，拖回当天会走完搬迁流程：先从当天移除、再追加到当天
+       末尾 —— 顺序静默变化，用户什么都没点却看到待办换了位。 */
+    name: 'moveTaskToDay 允许拖回当天（变成静默重排到末尾）',
+    file: 'src/store/index.ts',
+    string: 'if (toKey === cur) return',
+    stringTo: '',
+    expectRed: ['拖回当天'],
+  },
+  {
+    /* 目标天不标脏 = 搬过去的内容只活在内存里，250ms 后刷新/重启就回去。
+       源天写了（少一条）、目标天没写（不多这条）—— 数据搬了一半。 */
+    name: 'moveTaskToDay 不把目标天标脏（搬过去的内容不落盘）',
+    file: 'src/store/index.ts',
+    string: 'markDirty(toKey)',
+    stringTo: '',
+    expectRed: ['两天都写脏'],
+  },
 ]
 
 /** 改文件，返回 { changed } —— changed=false 表示变异没生效（没匹配上） */

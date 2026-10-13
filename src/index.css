@@ -337,6 +337,13 @@
 .cl-cal .cl-day.cur:hover {
   background: var(--color-ink);
 }
+/* 待办被拖到日期格上的高亮。必须在 @layer 外 —— 同上面的隔离层，
+   进了 layer 会被主题的 button 样式压掉。
+   用 inset box-shadow 而不是 border：不改格子尺寸（border 会让格子跳）。 */
+.cl-cal .cl-day.drop {
+  background: var(--color-soft);
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+}
 .cl-cal .cl-dot {
   position: absolute;
   bottom: 0.2rem;

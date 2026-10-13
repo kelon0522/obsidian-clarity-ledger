@@ -87,6 +87,62 @@ function sampleDay() {
   }
 }
 
+/** 一条没做完 + 一条已完成（act != null）—— 拖拽规则的两个面都要有 */
+function dragDay() {
+  return {
+    [K]: {
+      tasks: [
+        { id: 1, ti: '没做完的', est: 60, plan: null, pd: 0, act: null, ad: 0 },
+        { id: 2, ti: '做完了的', est: 60, plan: 480, pd: 60, act: 480, ad: 60 },
+      ],
+      note: '',
+      created: K,
+    },
+  }
+}
+
+/** 这个月里不等于今天的另一天（月历默认显示本月，目标格一定在） */
+function otherDayKey(): string {
+  const t = new Date()
+  const d = t.getDate() > 1 ? 1 : 2
+  const p = (n: number) => (n < 10 ? '0' + n : String(n))
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(d)}`
+}
+
+/** 月历上某一天的按钮（按格子里显示的数字找；箭头钮不是数字，不会误中） */
+function dayCell(k: string): HTMLElement {
+  const d = Number(k.slice(8))
+  // Array.from 而不是展开 —— tsconfig 没开 DOM.Iterable，NodeList 不能 spread
+  const cells = Array.from(document.querySelectorAll('.cl-cal button'))
+  const hit = cells.find((b) => b.textContent?.trim() === String(d))
+  if (!hit) throw new Error(`月历上找不到 ${k} 的日期格`)
+  return hit as HTMLElement
+}
+
+/** 伪造 DataTransfer —— jsdom 不实现它，原生 DnD 的落盘测试全靠这个 */
+function fakeDT() {
+  const store: Record<string, string> = {}
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    setData: (k: string, v: string) => {
+      store[k] = String(v)
+    },
+    getData: (k: string) => store[k] ?? '',
+  }
+}
+
+/**
+ * 派发一个会冒泡的拖拽事件。
+ * React 18 把监听器挂在根容器上，**不冒泡就收不到** ——
+ * cancelable 也要开，否则处理器里的 preventDefault 是空操作。
+ */
+function fireDrag(el: Element, type: string, dataTransfer: unknown) {
+  const e = new Event(type, { bubbles: true, cancelable: true })
+  ;(e as unknown as Record<string, unknown>).dataTransfer = dataTransfer
+  el.dispatchEvent(e)
+}
+
 describe('LedgerView 真机冒烟', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -118,6 +174,90 @@ describe('LedgerView 真机冒烟', () => {
   it('空库时也能渲染（不崩）', async () => {
     const host = await setup({ db: {} })
     expect(host.textContent).toContain('待办事项')
+  })
+})
+
+/**
+ * 待办拖拽规则（2026-10-13 新增）：
+ * 1. 已完成（act != null）的待办不能拖
+ * 2. 未完成的待办可以拖到月历的日期格上 = 整条搬到那天
+ *
+ * ## 为什么用派发事件而不是只查 DOM 属性
+ *
+ * 「draggable=false」只证明**开关**关了，证明不了**链路**是通的：
+ * payload 通道、日期格的 dragover/drop、store 的搬迁，任何一环断了
+ * 都表现为「拖了没反应」。这里把整条链路真的跑一遍。
+ */
+describe('待办拖拽规则（已完成不可拖 / 可拖到月历日期格）', () => {
+  /* 清理必须和第一个 describe 一样 —— 少了它，上一个用例挂着的 root
+     不会卸载，host 会越积越多（querySelectorAll 会数到别人的行）。 */
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    act(() => root?.unmount())
+    root = null
+    document.body.innerHTML = ''
+  })
+
+  it('已完成的待办行 draggable=false，未完成的仍是 true', async () => {
+    await setup({ db: dragDay() })
+    const rows = document.querySelectorAll('[data-testid="todo-list"] > div')
+    expect(rows).toHaveLength(2)
+    expect((rows[0] as HTMLElement).getAttribute('draggable')).toBe('true')
+    expect((rows[1] as HTMLElement).getAttribute('draggable')).toBe('false')
+    expect(rows[1]!.getAttribute('aria-label')).toContain('已完成，不能拖动')
+  })
+
+  it('对已完成的行派发 dragstart 也不建立拖拽通道', async () => {
+    await setup({ db: dragDay() })
+    const { getDragPayload } = await import('@/dnd/shared')
+    const rows = document.querySelectorAll('[data-testid="todo-list"] > div')
+    act(() => fireDrag(rows[1]!, 'dragstart', fakeDT()))
+    expect(getDragPayload()).toBeNull()
+  })
+
+  it('拖未完成待办到月历日期格 = 整条搬到那天', async () => {
+    const K2 = otherDayKey()
+    await setup({ db: dragDay() })
+    const { useStore } = await import('@/store')
+    const { getDragPayload } = await import('@/dnd/shared')
+    const row = document.querySelector('[data-testid="todo-list"] > div') as HTMLElement
+    const cell = dayCell(K2)
+    const dt = fakeDT()
+
+    act(() => fireDrag(row, 'dragstart', dt))
+    act(() => fireDrag(cell, 'dragover', dt))
+    // 悬停反馈：目标格拿到 drop 高亮
+    expect(cell.className).toContain('drop')
+
+    act(() => fireDrag(cell, 'drop', dt))
+    const db = useStore.getState().db
+    expect(db[K]!.tasks.map((t) => t.ti)).toEqual(['做完了的'])
+    expect(db[K2]!.tasks.map((t) => t.ti)).toEqual(['没做完的'])
+    // 字段原样搬过去，id 不变（id 是改名 / 撤销的锚点）
+    expect(db[K2]!.tasks[0]).toMatchObject({ id: 1, ti: '没做完的', est: 60 })
+
+    // 拖完要清理通道 —— 不清的话下一次拖拽会读到上一个的残留
+    act(() => fireDrag(row, 'dragend', dt))
+    expect(getDragPayload()).toBeNull()
+  })
+
+  it('拖回今天的日期格：不给高亮，也不重排', async () => {
+    await setup({ db: dragDay() })
+    const { useStore } = await import('@/store')
+    const row = document.querySelector('[data-testid="todo-list"] > div') as HTMLElement
+    const cell = dayCell(K)
+    const dt = fakeDT()
+
+    act(() => fireDrag(row, 'dragstart', dt))
+    act(() => fireDrag(cell, 'dragover', dt))
+    expect(cell.className).not.toContain('drop')
+    act(() => fireDrag(cell, 'drop', dt))
+    // 原地不动 —— 不是「移到当天末尾」
+    expect(useStore.getState().db[K]!.tasks.map((t) => t.id)).toEqual([1, 2])
+    act(() => fireDrag(row, 'dragend', dt))
   })
 })
 

@@ -17,6 +17,16 @@
  *
  * **dnd-kit 只保留键盘支持**（空格拾起 / 方向键 / 空格放下）——
  * 它的 KeyboardSensor 走 keydown，不碰 pointermove，不影响原生拖拽。
+ *
+ * ## 已完成（act != null）的待办不能拖
+ *
+ * 完成判定由落位决定（`core/logic.ts` 的 `finished`）。已完成的项：
+ * - 整行 `draggable={false}` —— 原生拖拽（排序 / 拖到轨道 / 拖到月历）全部关闭
+ * - `useSortable` 的 `disabled.draggable` 关掉 —— 键盘排序同样不能拾起它
+ * - 但 `disabled.droppable` 保持 false —— 未完成的项仍可以插到它前后
+ *
+ * store 的 `moveTaskToDay` 里还有一道同样的判断 —— UI 拦不住键盘和
+ * 将来的新入口，规则要落在数据层。
  */
 import { useEffect, useRef, useState } from 'react'
 import { SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -161,6 +171,11 @@ function Row({ t, index }: { t: Task; index: number }) {
   const moveTo = useStore((s) => s.moveTo)
   const tasks = useStore((s) => s.db[s.cur]?.tasks ?? EMPTY)
   const dragging = useDraggingId()
+  /* 已完成 = 不能拖。见文件头「已完成的待办不能拖」——
+     draggable 关掉的是原生拖拽（排序 / 拖轨道 / 拖月历），
+     useSortable 的 disabled.draggable 关掉的是键盘拾起；
+     droppable 保持 false：未完成的项仍能插到它前后。 */
+  const done = finished(t)
 
   /* 落点提示：插在目标行上面还是下面。用上下边框表示，不用绝对定位——
      两列网格里绝对定位容易被 overflow 裁掉。
@@ -176,8 +191,13 @@ function Row({ t, index }: { t: Task; index: number }) {
   }
 
   /* 只取键盘那部分。onPointerDown 必须丢掉：它会激活 PointerSensor，
-     而 PointerSensor 每次 pointermove 都 preventDefault，会掐死原生拖拽。*/
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: t.id })
+     而 PointerSensor 每次 pointermove 都 preventDefault，会掐死原生拖拽。
+     已完成时 listeners 整个是 undefined（useSortable 的 disabled.draggable），
+     `?.` 已经兜住。 */
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: t.id,
+    disabled: { draggable: done, droppable: false },
+  })
   const onKeyDown = listeners?.onKeyDown as KeyboardEventHandler<HTMLElement> | undefined
 
   const overRow = (e: React.DragEvent<HTMLElement>) => {
@@ -206,8 +226,15 @@ function Row({ t, index }: { t: Task; index: number }) {
       ref={setNodeRef}
       {...attributes}
       onKeyDown={onKeyDown}
-      draggable
+      draggable={!done}
       onDragStart={(e) => {
+        /* 双保险：draggable={false} 已经让浏览器不发起拖拽，
+           这里再拦一道 —— 万一哪台浏览器照样派发了 dragstart，
+           也不能把已完成项的 id 放进拖拽通道。 */
+        if (done) {
+          e.preventDefault()
+          return
+        }
         setDragPayload({ id: t.id, from: 'todo' })
         e.dataTransfer.effectAllowed = 'move'
         e.dataTransfer.setData('text/plain', String(t.id))
@@ -231,9 +258,14 @@ function Row({ t, index }: { t: Task; index: number }) {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       role="button"
       tabIndex={0}
-      aria-label={`第 ${index + 1} 优先级：${t.ti}。拖动可调整顺序，也可拖到下方轨道`}
-      className={`group flex items-start gap-2 rounded px-1 py-0.75 relative cursor-grab select-none
+      aria-label={
+        done
+          ? `第 ${index + 1} 优先级：${t.ti}。已完成，不能拖动`
+          : `第 ${index + 1} 优先级：${t.ti}。拖动可调整顺序，也可拖到下方轨道`
+      }
+      className={`group flex items-start gap-2 rounded px-1 py-0.75 relative select-none
         ${dragging === t.id ? 'opacity-40' : 'hover:bg-ink/5'}
+        ${done ? 'cursor-default' : 'cursor-grab'}
         ${hint === 'before' ? 'border-t-2 border-ink' : ''}
         ${hint === 'after' ? 'border-b-2 border-ink' : ''}`}
     >

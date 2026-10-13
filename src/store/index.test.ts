@@ -198,6 +198,93 @@ describe('待办', () => {
   })
 })
 
+/* ================= 待办跨日期移动（拖到月历） ================= */
+describe('待办拖到月历（跨日期移动）', () => {
+  it('整条搬到目标天：源天消失，目标天末尾出现', () => {
+    useStore.getState().moveTaskToDay(3, OTHER)
+    expect(ids()).toEqual([1, 2])
+    const other = useStore.getState().db[OTHER]!.tasks
+    expect(other).toHaveLength(1)
+    expect(other[0]!.ti).toBe('C')
+  })
+
+  it('字段原样搬过去（含排期与预估）', () => {
+    // Task 1 有计划排期（plan 480 / pd 60 / est 45）—— 搬过去一个字段都不能丢
+    useStore.getState().moveTaskToDay(1, OTHER)
+    const t = useStore.getState().db[OTHER]!.tasks[0]!
+    expect(t).toMatchObject({ id: 1, ti: 'A', est: 45, plan: 480, pd: 60, act: null, ad: 0 })
+  })
+
+  it('目标天不存在时自动建档', () => {
+    useStore.getState().moveTaskToDay(3, '2026-10-20')
+    const d = useStore.getState().db['2026-10-20']!
+    expect(d.tasks.map((t) => t.id)).toEqual([3])
+    expect(d.created).toBe('2026-10-20')
+  })
+
+  it('已完成的待办不能搬（act != null 即完成）', () => {
+    useStore.getState().complete(1, 600)
+    useStore.getState().moveTaskToDay(1, OTHER)
+    expect(ids()).toEqual([1, 2, 3])
+    // 目标天不该被创建出来 —— 拒绝了就是什么都没发生
+    expect(useStore.getState().db[OTHER]).toBeUndefined()
+  })
+
+  it('拖回当天 = 原地不动（不会变成「移到末尾」的静默重排）', () => {
+    useStore.getState().moveTaskToDay(3, DAY)
+    expect(ids()).toEqual([1, 2, 3])
+  })
+
+  it('不存在的 id 不崩也不搬', () => {
+    expect(() => useStore.getState().moveTaskToDay(999, OTHER)).not.toThrow()
+    expect(ids()).toEqual([1, 2, 3])
+    expect(useStore.getState().db[OTHER]).toBeUndefined()
+  })
+
+  it('搬完后目标天守「计划列顺延」', () => {
+    // OTHER 天已占了 8:00–9:00；A 也是 8:00 搬过去 → 应被推到 9:00
+    useStore.setState((s) => ({
+      db: {
+        ...s.db,
+        [OTHER]: {
+          tasks: [{ id: 50, ti: '已有', est: 60, plan: 480, pd: 60, act: null, ad: 0 }],
+          note: '',
+          created: OTHER,
+        },
+      },
+    }))
+    useStore.getState().moveTaskToDay(1, OTHER)
+    const [first, second] = useStore.getState().db[OTHER]!.tasks
+    expect(first!.plan).toBe(480)
+    expect(second!.plan).toBe(540)
+  })
+
+  it('源天其余任务的顺序不变', () => {
+    useStore.getState().moveTaskToDay(2, OTHER)
+    expect(ids()).toEqual([1, 3])
+  })
+
+  it('两天都写脏 —— 少写任何一天都会丢一半数据', async () => {
+    writeDay.mockClear()
+    useStore.getState().moveTaskToDay(3, OTHER)
+    await flushNow()
+    const days = writeDay.mock.calls.map((c) => c[0])
+    expect(days).toContain(DAY)
+    expect(days).toContain(OTHER)
+    expect(writeDay).toHaveBeenCalledTimes(2)
+  })
+
+  it('弹提示告诉用户搬到哪了，且不带撤销按钮', () => {
+    // 撤销快照是单天的，跨天移动给不了撤销 —— 别放一个按了没反应的按钮
+    useStore.getState().moveTaskToDay(3, OTHER)
+    const t = useStore.getState().toast
+    expect(t).not.toBeNull()
+    expect(t!.msg).toContain('C')
+    expect(t!.msg).toContain('10-11')
+    expect(t!.undoable).toBe(false)
+  })
+})
+
 /* ================= 删除待办的撤销 ================= */
 describe('删除待办 · 可撤销', () => {
   it('删除会弹提示且带撤销按钮', () => {
