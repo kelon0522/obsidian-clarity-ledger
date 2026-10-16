@@ -27,6 +27,11 @@
   "Current version / Last updated"（SPA，但数据在 HTML 里）。
 - 审核器 `obsidianmd/obsidian-workflows`：硬失败只有 build / 依赖安装 / manifest / 缺 Release 资产 /
   attestation；lint/policy findings 默认 advisory（警告，不挡发布）。
+- **新版目录审核的判定口径**（2026-10 查证）：Errors 挡扫描、**Warnings 只是 advisory**；
+  既有条目扫描在 **2026-10-30 前 informational**（不影响上架），之后 latest release 必须过审。
+  官方求助渠道：Obsidian Discord **#plugin-dev**。
+  2026-10-15 起扫描器有 attestation 相关故障（「could not be completed」/ 误报验证失败），
+  受影响时**等待 + 报 Discord**，别反复 rescan（实测无用）。
 
 ## 行尾符：两个方向的硬要求
 - **`.bat` 必须 CRLF** —— cmd.exe 按 CRLF 切分命令，LF 会让它**错位拼接相邻行**，
