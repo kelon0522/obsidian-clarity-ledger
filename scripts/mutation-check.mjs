@@ -282,6 +282,48 @@ export const MUTATIONS = [
     stringTo: '',
     expectRed: ['拖到别的日期后', '整条搬到那天'],
   },
+  {
+    /* 批量版的「已完成的不能搬」。少了这个过滤，做完了的待办会被
+       一起搬走 —— 而「落位即完成」的判定是按天的，搬走等于篡改
+       那天的完成记录。三条断言都该红：store 的只搬未完成 / 无未完成
+       项 no-op / 冒烟的点击链路。 */
+    name: 'moveUnfinishedToDay 不再拒绝已完成的待办（批量把做完了的也搬走）',
+    file: 'src/store/index.ts',
+    string: 'const moving = get().db[cur]?.tasks.filter((x) => x.act == null) ?? []',
+    stringTo: 'const moving = get().db[cur]?.tasks ?? []',
+    expectRed: ['只搬未完成的', '没有未完成项时', '已完成的留在原天'],
+  },
+  {
+    /* 批量搬过去的任务可能带着排期（plan != null）—— 目标天同样要守
+       「计划列顺延」，否则两块时间重叠，而顺延是全局规则。
+       注意 needle 带了上面那行注释：`reflow(to.tasks)` 在文件里出现多次，
+       不带注释会命中 moveTaskToDay 的那次，变异就打偏了。 */
+    name: '批量搬迁后目标天不顺延（搬来的排期会重叠）',
+    file: 'src/store/index.ts',
+    string:
+      '      // 搬来的任务可能带着排期（plan != null）—— 批量同样守「计划列顺延」\n      reflow(to.tasks)',
+    stringTo: '      // 搬来的任务可能带着排期（plan != null）—— 批量同样守「计划列顺延」',
+    expectRed: ['搬完后目标天守「计划列顺延」'],
+  },
+  {
+    /* 没有未完成项时也要走完流程的话，day_ 会把目标天**创建出来**
+       （空任务列表）—— 用户翻月历时会看到一个莫名出现的红点。
+       拒绝了就是什么都没发生，这条断言守的就是「什么都不发生」。 */
+    name: 'moveUnfinishedToDay 去掉空搬守卫（没有未完成项也建目标天）',
+    file: 'src/store/index.ts',
+    string: 'if (!moving.length) return',
+    stringTo: '',
+    expectRed: ['没有未完成项时'],
+  },
+  {
+    /* 按钮的显示条件少一个都不行：在今天搬今天没有意义，
+       「搬今天」这三个字在那天会出现一个按了没反应的按钮。 */
+    name: '「移到今天」按钮去掉「不是今天」的条件（今天也显示）',
+    file: 'src/components/TodoList.tsx',
+    string: 'const showMove = cur !== todayKey && n > 0',
+    stringTo: 'const showMove = n > 0',
+    expectRed: ['在今天不显示'],
+  },
 ]
 
 /** 改文件，返回 { changed } —— changed=false 表示变异没生效（没匹配上） */

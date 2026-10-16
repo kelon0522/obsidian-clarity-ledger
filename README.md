@@ -50,10 +50,13 @@ This means:
 | Drag a block / its bottom handle on the actual track | Changes the actual start time and duration |
 | Double-click a todo title | Renames it in place; all three views update |
 | Drag an unfinished todo onto a date in the calendar | The whole task moves to that day (the day is created if it has no record yet) |
+| On a day that isn't today, click **Move to today** in the todo list | Every unfinished todo on that day moves to today — finished ones stay where they are |
 | Delete a block on the actual track | Clears only the actual time; the schedule stays |
 
 **Finished todos can't be dragged.** "Finished" means it landed on the actual track —
 moving it to another date would move the "done" along with it, which contradicts that rule.
+The **Move to today** button follows the same rule: it only moves unfinished todos, and the
+button itself shows how many will move.
 
 **Todos are the master table; the plan and actual tracks are two projections of it** — all
 three views read the same data, so there is no "changed it here, forgot to sync there".
@@ -128,8 +131,8 @@ identical product rules.
 ```bash
 npm install
 npm run build       # produces main.js + styles.css, then self-checks them
-npm test            # 206 test cases
-npm run mutation    # mutation testing: injects 17 bugs to prove the assertions still bite
+npm test            # 279 test cases
+npm run mutation    # mutation testing: injects 28 bugs to prove the assertions still bite
 ```
 
 `npm test` and `npm run mutation` are **cross-platform**: driven by node, and they run on Windows

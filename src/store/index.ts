@@ -89,6 +89,11 @@ interface Actions {
   reorder(this: void, fromId: number, toId: number): void
   /** 待办拖到月历的某一天 = 整条搬过去。目标天不存在就建档 */
   moveTaskToDay(this: void, id: number, toKey: string): void
+  /**
+   * 把当前查看那天的**全部未完成待办**搬到目标天（UI 上传的是今天）。
+   * 单项搬运（moveTaskToDay）的批量版，规则逐条对齐，不发明新语义。
+   */
+  moveUnfinishedToDay(this: void, toKey: string): void
 
   schedule(this: void, id: number, m: number, du: number): void
   complete(this: void, id: number, m: number): void
@@ -412,6 +417,50 @@ export const useStore = create<Store>((set, get) => ({
     markDirty(cur)
     markDirty(toKey)
     get().notify(`已移至 ${toKey.slice(5)}：${hit.ti}`, false)
+  },
+
+  /**
+   * 批量搬迁：把当前查看那天的全部未完成待办搬到目标天（UI 传今天）。
+   *
+   * 规则与单项搬运（moveTaskToDay）逐条对齐，不发明新语义：
+   * 1. **已完成的不能搬** —— 完成判定由 act 决定（落位即完成）。
+   *    「完成」是那天的事实，跟着搬走会和判定规则打架。
+   * 2. **字段原样搬运**（含排期），按原相对顺序追加到目标天末尾；
+   *    目标天不存在就建档（`day_` 会建）。
+   * 3. **目标天守「计划列顺延」** —— 搬来的排期同样参与 reflow。
+   * 4. **目标天就是当前天 → no-op**；没有未完成项 → no-op，
+   *    且不创建目标天（拒绝了就是什么都没发生）。
+   * 5. **两天都写脏** —— 少写任何一天都会让迁移只落一半
+   *    （表现为「搬走了但文件里还在」）。
+   *
+   * 不给撤销：撤销快照是**单条**结构（day + task + index），批量跨天
+   * 撤销要把它改成快照数组，会动到 doUndo 和全部既有撤销用例。
+   * 单项拖拽（moveTaskToDay）同样不给撤销，这里沿用例程 ——
+   * 别放一个按了没反应的按钮。
+   */
+  moveUnfinishedToDay: (toKey) => {
+    const cur = get().cur
+    if (toKey === cur) return
+    // 先读一次拿条数（notify 用）；set 里再过滤，防状态在两步之间变过
+    const moving = get().db[cur]?.tasks.filter((x) => x.act == null) ?? []
+    if (!moving.length) return
+    set((s) => {
+      const from = s.db[cur]
+      // 这里只兜「找不到」—— act 的判断在上面那一行，两处都写会让
+      // 单行变异被掩盖（改了上面下面还在拦，测试照样绿）
+      if (!from) return {}
+      from.tasks = from.tasks.filter((x) => x.act != null)
+      from._e = nowMin()
+      const to = day_(s.db, toKey)
+      to.tasks = [...to.tasks, ...moving.map((x) => ({ ...x }))]
+      to._e = nowMin()
+      // 搬来的任务可能带着排期（plan != null）—— 批量同样守「计划列顺延」
+      reflow(to.tasks)
+      return { db: { ...s.db } }
+    })
+    markDirty(cur)
+    markDirty(toKey)
+    get().notify(`已将 ${moving.length} 条未完成待办移至 ${toKey.slice(5)}`, false)
   },
 
   /** 排期 / 挪时间。`m` 是当日第几分钟 */

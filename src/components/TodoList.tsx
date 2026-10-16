@@ -33,9 +33,10 @@ import { SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sort
 import { CSS } from '@dnd-kit/utilities'
 import type { KeyboardEventHandler } from 'react'
 import { finished } from '@/core/logic'
+import { dkey } from '@/core/time'
 import type { Task } from '@/core/types'
 import { useStore } from '@/store'
-import { Hw } from '@/ui'
+import { Btn, Hw } from '@/ui'
 import { getDragPayload, setDragPayload, subscribeDrag } from '@/dnd/shared'
 
 const EMPTY: Task[] = []
@@ -299,7 +300,18 @@ export function TodoList() {
   const tasks = useStore((s) => s.db[s.cur]?.tasks ?? EMPTY)
   const moveTo = useStore((s) => s.moveTo)
   const addTodo = useStore((s) => s.addTodo)
+  const cur = useStore((s) => s.cur)
+  const moveUnfinishedToDay = useStore((s) => s.moveUnfinishedToDay)
   const [v, setV] = useState('')
+
+  /* 「移到今天」按钮 —— 单项拖到月历的批量快捷方式，三个条件同时满足才出现：
+     1. 看的**不是今天**（在今天搬今天没有意义）
+     2. 当天有未完成待办（act == null）—— 已完成的不搬，与拖拽同一条规则
+     3. 条数写在按钮上，点下去之前就知道会搬几条
+     未来日期的未完成项同样显示 —— 「搬回今天」对它们是同一个动作。 */
+  const todayKey = dkey(new Date())
+  const n = tasks.filter((t) => t.act == null).length
+  const showMove = cur !== todayKey && n > 0
 
   const submit = () => {
     const s = v.trim()
@@ -324,6 +336,15 @@ export function TodoList() {
       <div className="flex items-baseline gap-3 mb-1">
         <Hw className="text-ink2 text-xs">顺序即优先级</Hw>
         <Hw className="text-dim2 text-xs">拖动整行调整顺序 · 双击文字可改</Hw>
+        {/* ml-auto 靠外层 span —— Btn 的 props 里没有 className，
+            塞不进去；而包一层 span 不动共享组件 */}
+        {showMove && (
+          <span className="ml-auto">
+            <Btn onClick={() => moveUnfinishedToDay(todayKey)} title={`把这一天没做完的 ${n} 条待办搬到今天`}>
+              移到今天 · {n}
+            </Btn>
+          </span>
+        )}
       </div>
 
       {/* 两列排布 → rectSortingStrategy，横向也能换位。

@@ -426,3 +426,93 @@ describe('每日回顾不被遮挡（布局结构）', () => {
     expect(src).toContain('export const TRACK_MAX')
   })
 })
+
+/**
+ * 「移到今天」按钮 —— 单项拖到月历的批量快捷方式。
+ *
+ * 三个显示条件（不是今天 / 有未完成 / 条数可见）和点击后的数据流向，
+ * 全部在这组用例里跑真的：按钮藏起来时点不到，按钮出现时点了数据要真搬。
+ */
+describe('未完成待办批量移到今天（按钮）', () => {
+  /* 清理必须和前面几个 describe 一样 —— 少了它，上一个用例挂着的 root
+     不会卸载，host 越积越多，querySelectorAll 会数到别人的行 */
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    act(() => root?.unmount())
+    root = null
+    document.body.innerHTML = ''
+  })
+
+  /** 按文字找按钮 —— class 会随样式改，文字不会 */
+  function moveBtn(): HTMLElement | undefined {
+    return Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('移到今天'))
+  }
+
+  /** 一条没做完 + 一条已完成，放在不是今天的那天 */
+  function pastDayDb() {
+    const K2 = otherDayKey()
+    return {
+      cur: K2,
+      db: {
+        [K2]: {
+          tasks: [
+            { id: 1, ti: '没做完的', est: 60, plan: null, pd: 0, act: null, ad: 0 },
+            { id: 2, ti: '做完了的', est: 60, plan: 480, pd: 60, act: 480, ad: 60 },
+          ],
+          note: '',
+          created: K2,
+        },
+      },
+    }
+  }
+
+  it('在今天不显示「移到今天」按钮', async () => {
+    // cur = K（今天）且有未完成待办 —— 搬今天没有意义，按钮不出现
+    await setup({ db: dragDay() })
+    expect(moveBtn()).toBeUndefined()
+  })
+
+  it('不是今天、有未完成待办时才显示，且带上条数', async () => {
+    const s = pastDayDb()
+    await setup(s)
+    const btn = moveBtn()
+    expect(btn).toBeDefined()
+    // 两条里只有一条未完成 —— 按钮上的数是 1，不是 2
+    expect(btn!.textContent).toContain('1')
+  })
+
+  it('全部已完成时不显示按钮', async () => {
+    const K2 = otherDayKey()
+    await setup({
+      cur: K2,
+      db: {
+        [K2]: {
+          tasks: [{ id: 2, ti: '做完了的', est: 60, plan: 480, pd: 60, act: 480, ad: 60 }],
+          note: '',
+          created: K2,
+        },
+      },
+    })
+    expect(moveBtn()).toBeUndefined()
+  })
+
+  it('点击后未完成的搬到今天，已完成的留在原天', async () => {
+    const s = pastDayDb()
+    await setup(s)
+    const { useStore } = await import('@/store')
+
+    act(() => {
+      moveBtn()!.click()
+    })
+
+    const db = useStore.getState().db
+    // 原天只剩已完成的那条
+    expect(db[s.cur]!.tasks.map((t) => t.ti)).toEqual(['做完了的'])
+    // 今天这天原本不存在 → 自动建档，搬过去的那条在里面，字段原样
+    expect(db[K]!.tasks.map((t) => t.ti)).toEqual(['没做完的'])
+    expect(db[K]!.tasks[0]).toMatchObject({ id: 1, ti: '没做完的', est: 60 })
+  })
+})
