@@ -12,6 +12,10 @@ on:
 
 permissions:
   contents: write
+  # 产物证明（attestation）必须的两种权限 —— 少任何一个，attest 步骤都会失败：
+  # id-token 用来签发「本次构建的 OIDC 身份」，attestations 用来把证明写进仓库。
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -45,6 +49,18 @@ jobs:
       - name: Verify build
         run: node scripts/verify-build.mjs
 
+      # 产物证明（attestation）：证明「Release 附件确实由本仓库这次构建产出」。
+      # 社区目录的评分卡会检查它 —— 缺了会被标「Missing GitHub artifact
+      # attestations」，版本审核判 Failed（2026-10-16，0.1.8 就是这么挂的）。
+      # 用户侧可用 `gh attestation verify main.js --repo <owner>/<repo>` 验证。
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            styles.css
+            manifest.json
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -55,6 +71,10 @@ jobs:
           # 想先看内容再发，就手动把 draft 勾掉 —— 别让流水线默认出 draft。
           draft: false
           prerelease: false
+          # 自动生成发布说明 —— 评分卡有一条「release has no description」，
+          # 空 body 会被点名（自动生成的内容至少含 Full Changelog 链接）。
+          # 需要更详细的说明就发版后 `gh release edit <版本> --notes ...` 补。
+          generate_release_notes: true
           files: |
             main.js
             manifest.json
