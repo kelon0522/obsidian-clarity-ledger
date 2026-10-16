@@ -86,6 +86,8 @@
 - `npm run check:bat`：install.bat 行尾/编码/BOM 五条；测试与变异由 node 驱动（bash 为回退）。
 - 发版：`npm version patch`（两个提交 + fix-tag 改名）→ `git push origin main && git push origin <版本>`
   （**git push 不带 tag，必须单独推**）。
+- Release 产物带 **attestation**（`release.yml` 内置 `attest-build-provenance@v4`，2026-10-16 起）——
+  目录审核硬要求，缺了判 Failed；验证：`gh attestation verify <file> --repo kelon0522/obsidian-clarity-ledger`。
 - CI 与 Release 两个 workflow 的 Node 版本必须一致（不一致 = 「CI 绿、Release 红」）。
 
 ## 写断言的两条纪律（都栽过）
