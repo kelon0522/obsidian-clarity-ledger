@@ -37,7 +37,7 @@ import { dkey } from '@/core/time'
 import type { Task } from '@/core/types'
 import { useStore } from '@/store'
 import { Btn, Hw } from '@/ui'
-import { getDragPayload, setDragPayload, subscribeDrag } from '@/dnd/shared'
+import { getDragPayload, getDropHint, setDragPayload, setDropHint, subscribeDrag } from '@/dnd/shared'
 
 const EMPTY: Task[] = []
 
@@ -60,6 +60,19 @@ function useDraggingId(): number | null {
   const [p, setP] = useState(() => getDragPayload())
   useEffect(() => subscribeDrag(() => setP(getDragPayload())), [])
   return p?.from === 'todo' ? p.id : null
+}
+
+/**
+ * 本行是不是当前落点（红条插前 / 插后）。
+ *
+ * 同样只读通道，**不再自己存一份** —— 落点全局只有一个，每行各存一份
+ * 就没法互相清干净：行 3 亮起红条后，无论是拖回原位松手还是横移到别的
+ * 行，它都收不到「该灭了」的通知（2026-10-19 主理人截图）。
+ */
+function useDropPos(id: number): 'before' | 'after' | null {
+  const [h, setH] = useState(() => getDropHint())
+  useEffect(() => subscribeDrag(() => setH(getDropHint())), [])
+  return h && h.id === id ? h.pos : null
 }
 
 /**
@@ -185,15 +198,10 @@ function Row({ t, index }: { t: Task; index: number }) {
   /* 落点提示：插在目标行上面还是下面。用上下边框表示，不用绝对定位——
      两列网格里绝对定位容易被 overflow 裁掉。
 
-     **必须同时用 ref 和 state**：ref 给事件读（同步、最新），state 只驱动样式。
-     只用 state 的话，dragover → drop 之间组件还没重渲染，drop 读到的是
-     上一次的 hint —— 快速拖动时落点会算错（变异测试能抓到）。*/
-  const [hint, setHint] = useState<'before' | 'after' | null>(null)
-  const hintRef = useRef<'before' | 'after' | null>(null)
-  const setHintBoth = (v: 'before' | 'after' | null) => {
-    hintRef.current = v
-    setHint(v)
-  }
+     读的是 dnd 通道里的全局 hint（见 useDropPos）—— 每次 dragover 直接
+     写模块变量，drop 时同步读就一定是最新的，不需要再拿 ref 兜一遍
+     重渲染的时间差。*/
+  const hint = useDropPos(t.id)
 
   /* 只取键盘那部分。onPointerDown 必须丢掉：它会激活 PointerSensor，
      而 PointerSensor 每次 pointermove 都 preventDefault，会掐死原生拖拽。
@@ -207,11 +215,17 @@ function Row({ t, index }: { t: Task; index: number }) {
 
   const overRow = (e: React.DragEvent<HTMLElement>) => {
     const id = dragIdOf(e)
-    if (id == null || id === t.id) return
+    if (id == null) return
+    /* 拖回自己 = 没有落点。这里必须**主动清**：否则上一个目标行亮着的
+       红条会一直留到松手（松手前都还在，看着像「取消不掉」）。 */
+    if (id === t.id) {
+      setDropHint(null)
+      return
+    }
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const r = e.currentTarget.getBoundingClientRect()
-    setHintBoth(e.clientY < r.top + r.height / 2 ? 'before' : 'after')
+    setDropHint({ id: t.id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' })
   }
 
   const dropRow = (e: React.DragEvent<HTMLElement>) => {
@@ -219,10 +233,10 @@ function Row({ t, index }: { t: Task; index: number }) {
     e.stopPropagation()
     e.preventDefault()
     const id = dragIdOf(e)
-    const h = hintRef.current
-    setHintBoth(null)
-    if (id == null || !h) return
-    const to = insertIndex(tasks, id, t.id, h === 'after')
+    const h = getDropHint()
+    setDropHint(null)
+    if (id == null || !h || h.id !== t.id) return
+    const to = insertIndex(tasks, id, t.id, h.pos === 'after')
     if (to != null) moveTo(id, to)
   }
 
@@ -245,8 +259,9 @@ function Row({ t, index }: { t: Task; index: number }) {
         e.dataTransfer.setData('text/plain', String(t.id))
       }}
       onDragEnd={() => {
+        /* 清通道就够了 —— setDragPayload(null) 会连落点提示一起清，
+           所有行都从同一个订阅里收到「拖拽结束了」。 */
         setDragPayload(null)
-        setHintBoth(null)
       }}
       onDragOver={overRow}
       onDrop={dropRow}
@@ -325,6 +340,7 @@ export function TodoList() {
   const dropAtEnd = (e: React.DragEvent) => {
     e.preventDefault()
     const id = dragIdOf(e)
+    setDropHint(null)
     if (id == null || !tasks.length) return
     const from = tasks.findIndex((t) => t.id === id)
     if (from < 0 || from === tasks.length - 1) return

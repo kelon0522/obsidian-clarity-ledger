@@ -101,6 +101,18 @@ function dragDay() {
   }
 }
 
+/** 三条都没做完 —— 排序 / 落点提示要「从 A 到 C 再回 A」才有得测 */
+function threeDay() {
+  const t = (id: number, ti: string) => ({ id, ti, est: 60, plan: null, pd: 0, act: null, ad: 0 })
+  return {
+    [K]: {
+      tasks: [t(1, '第一条'), t(2, '第二条'), t(3, '第三条')],
+      note: '',
+      created: K,
+    },
+  }
+}
+
 /** 这个月里不等于今天的另一天（月历默认显示本月，目标格一定在） */
 function otherDayKey(): string {
   const t = new Date()
@@ -136,10 +148,14 @@ function fakeDT() {
  * 派发一个会冒泡的拖拽事件。
  * React 18 把监听器挂在根容器上，**不冒泡就收不到** ——
  * cancelable 也要开，否则处理器里的 preventDefault 是空操作。
+ *
+ * clientY 可选：落点提示按「鼠标在行的上半还是下半」决定插前插后，
+ * jsdom 的 getBoundingClientRect 全 0，给个正数就落在下半（after）。
  */
-function fireDrag(el: Element, type: string, dataTransfer: unknown) {
+function fireDrag(el: Element, type: string, dataTransfer: unknown, clientY?: number) {
   const e = new Event(type, { bubbles: true, cancelable: true })
   ;(e as unknown as Record<string, unknown>).dataTransfer = dataTransfer
+  if (clientY != null) (e as unknown as Record<string, unknown>).clientY = clientY
   el.dispatchEvent(e)
 }
 
@@ -301,6 +317,55 @@ describe('待办拖拽规则（已完成不可拖 / 可拖到月历日期格）'
     expect(rows[0]!.className).not.toContain('opacity-40')
     // 圈号还是数字（不是 ✓）—— 灰不是「已完成」那个灰
     expect(rows[0]!.textContent).not.toContain('✓')
+  })
+
+  /**
+   * 回归（2026-10-19 主理人截图：把 1 拖到 3，3 亮起红条；把 1 拖回原处
+   * 松手取消，红条留在 3 上下不来）。
+   *
+   * 根因：落点提示当时是**每行私有的 state**，清理只有两条路 ——
+   * 「命中行的 drop」和「源行的 dragend」。行 3 既不是源也不是最终落点
+   * （拖回原位后命中的是行 1 自己），永远收不到通知。
+   * 提示天生是全局唯一的（一次拖拽只有一个落点），现在挂在 dnd 通道上，
+   * 清通道即清红条。
+   */
+  it('拖到别的行再拖回原位松手，红条必须消失', async () => {
+    await setup({ db: threeDay() })
+    const rows = () =>
+      Array.from(document.querySelectorAll('[data-testid="todo-list"] > div')) as HTMLElement[]
+    const [r1, , r3] = rows()
+    const dt = fakeDT()
+
+    act(() => fireDrag(r1!, 'dragstart', dt))
+    act(() => fireDrag(r3!, 'dragover', dt, 10))
+    expect(r3!.className).toContain('border-b-2')
+
+    // 拖回原位：命中的是源行自己（没有落点），然后源行 dragend
+    act(() => fireDrag(r1!, 'dragover', dt, 0))
+    act(() => fireDrag(r1!, 'dragend', dt))
+
+    for (const r of rows()) {
+      expect(r.className).not.toContain('border-t-2')
+      expect(r.className).not.toContain('border-b-2')
+    }
+  })
+
+  it('红条只亮一条：从行 3 横移到行 5，行 3 那条要灭', async () => {
+    await setup({ db: threeDay() })
+    const rows = () =>
+      Array.from(document.querySelectorAll('[data-testid="todo-list"] > div')) as HTMLElement[]
+    const [r1, , r3] = rows()
+    const dt = fakeDT()
+
+    act(() => fireDrag(r1!, 'dragstart', dt))
+    act(() => fireDrag(r3!, 'dragover', dt, 10))
+    expect(r3!.className).toContain('border-b-2')
+
+    act(() => fireDrag(rows()[1]!, 'dragover', dt, 10))
+    expect(r3!.className).not.toContain('border-b-2')
+    expect(rows()[1]!.className).toContain('border-b-2')
+
+    act(() => fireDrag(r1!, 'dragend', dt))
   })
 })
 
