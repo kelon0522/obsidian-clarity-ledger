@@ -7,7 +7,7 @@
 - 名称：Clarity Ledger（仓库 `kelon0522/obsidian-clarity-ledger`，插件 id `clarity-ledger`）。
 - 定位：《认知觉醒》工字格笔记法的 Obsidian 桌面插件 —— 待办为主表，计划/实际是它的两个投影，
   写 vault 的 Markdown（默认 `清晰力/`）。无网络请求；`isDesktopOnly: true`；Web 版在另一仓库（规则一致）。
-- 远端 public、默认分支 `main`、CI 连续绿；已上架社区目录、按版本迭代（2026-10-16：**0.1.9**）。
+- 远端 public、默认分支 `main`、CI 连续绿；已上架社区目录、按版本迭代（2026-10-24：**0.1.12**）。
 - 日常发版走仓库根 **`发布流程.md`**（四道闸 → push → CI 绿 → version → 推 tag → 查 Release）。
   首次上架记录在 `上架清单.md`；改 migrate.ts / SettingsTab.ts 要按 `手测清单.md` 真机手测。
 - 上架资源：`icon.png`（100² 靛蓝账本）、`screenshot.png`（1988×1168）；源大图 1024² 保留以便改版。
