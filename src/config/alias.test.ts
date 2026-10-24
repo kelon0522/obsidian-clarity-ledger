@@ -426,8 +426,6 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
   it('日期格用具名 class 而不是长串工具类', () => {
     const cal = readFileSync(join(here, 'src', 'components', 'Calendar.tsx'), 'utf8')
     expect(cal).toContain('cl-day')
-    expect(cal).toContain('cl-nav')
-    expect(cal).toContain('cl-dot')
 
     /* 旧的工具类写法不该还在。
        **必须先剥注释** —— 组件里有段注释正是在解释「为什么不能用
@@ -446,15 +444,77 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
     const all = clsNames.join(' ')
     expect(all).toContain('cl-day')
     expect(all).toContain('cl-nav')
-    expect(all).toContain('cl-dot')
   })
 
-  it('cur 是实心玫红块 —— 用户最直观的对错信号', () => {
+  it('选中日是 2px 内描边环，不再实心填充', () => {
+    /* 早先是实心玫红块。改成三态底色之后，填充会把状态色整个盖掉 ——
+       最典型的坏情况是「选中的那天恰好全部完成」，绿底就看不见了。
+       所以选中退成 2px 环：仍是最醒目的那一格，但不占底色通道。 */
     const css = read('src/index.css')
     const i = css.indexOf('.cl-day.cur {')
     expect(i).toBeGreaterThan(-1)
     const seg = css.slice(i, i + 120)
-    expect(seg).toContain('background: var(--color-ink)')
+    expect(seg).toContain('box-shadow: inset 0 0 0 2px var(--color-ink)')
+    expect(seg).not.toContain('background: var(--color-ink)')
+  })
+
+  it('今天靠数字下方的短横线标记，不吃边框（边框归选中）', () => {
+    const css = stripCssCommentLines(read('src/index.css'))
+    const i = css.indexOf('.cl-day.today::after')
+    expect(i).toBeGreaterThan(-1)
+    expect(css.slice(i, i + 260)).toContain('background: var(--color-ink)')
+    // 反锁：今天一旦再写 border，就会和选中的环撞成同一个信号
+    expect(css).not.toMatch(/\.cl-day\.today\s*\{[^}]*border:/)
+  })
+
+  it('「有未完成」与「全部完成」是两种底色', () => {
+    const css = stripCssCommentLines(read('src/index.css'))
+    const bgOf = (sel: string) => {
+      const i = css.indexOf(sel)
+      expect(i, `${sel} 不存在`).toBeGreaterThan(-1)
+      return /background:\s*([^;]+);/.exec(css.slice(i, i + 160))?.[1]?.trim()
+    }
+    const doing = bgOf('.cl-day.doing::before {')
+    const done = bgOf('.cl-day.done::before {')
+    expect(doing).toBe('var(--color-soft)')
+    expect(done).toBe('var(--color-ok)')
+    expect(doing).not.toBe(done)
+  })
+
+  it('状态色块缩进格子内部（铺满会让相邻同色格粘成一片）', () => {
+    /* 真事故（2026-10-24 主理人截图）：色块整格铺满，
+       `gap-px` 那 1px 在缩放 + 手写体下等于不存在，
+       相邻同色的两天连成一整片 → 格子边界消失，看着像色块压住了数字。
+       判据是「色块画在 ::before 上，且 inset 不进 0」——
+       只断 background 存在抓不到这个回归。 */
+    const css = stripCssCommentLines(read('src/index.css'))
+    const i = css.indexOf('.cl-day::before')
+    expect(i).toBeGreaterThan(-1)
+    expect(css.slice(i, i + 200)).toContain('inset: 2px')
+    // 反锁：状态色不能又写回按钮本身的 background
+    expect(css).not.toMatch(/\.cl-day\.(doing|done)\s*\{[^}]*background:/)
+  })
+
+  it('日期格不让 aspect-ratio 反推宽度（会压进右邻格）', () => {
+    /* 真事故（2026-10-24 三张实机截图）：格子原来写 `aspect-ratio: 1/1`，
+       宽度会跟着行高倒推。格子一旦比网格列宽，就横向压进右邻格 ——
+       相邻同色的两天看起来是一整块，而且**与缩放无关**（是布局反馈，不是像素取整）。
+       改法：宽度跟列走（100% + box-sizing），高度写死。 */
+    const rule = cssRule(read('src/index.css'), '.cl-day')
+    expect(rule, '.cl-day 规则没找到').not.toBe('')
+    // 必须先剥注释 —— 规则里那段注释正是在解释「为什么不用 aspect-ratio」
+    expect(stripCssCommentLines(rule)).not.toContain('aspect-ratio')
+    expect(rule).toContain('height: 24px')
+    expect(rule).toContain('box-sizing: border-box')
+  })
+
+  it('窄窗口下日历不铺满、主区可横向滚动', () => {
+    /* 原来日历带 `max-lg:w-full`：窗口一窄，日历吃掉整个宽度，
+       主区被挤到视口外，看着像「只剩日历」，连待办都看不到。 */
+    const cal = readFileSync(join(here, 'src', 'components', 'Calendar.tsx'), 'utf8')
+    expect(cal).not.toContain('max-lg:w-full')
+    const view = readFileSync(join(here, 'src', 'view', 'LedgerView.tsx'), 'utf8')
+    expect(view).toContain('overflow-x-auto')
   })
 
   /**
@@ -481,15 +541,15 @@ describe('日历样式隔离（真机样式不对的根因）', () => {
       '.blk',
       // 键盘焦点可见性（可访问性底线）
       ':focus-visible',
-      // 日历：箭头 / 日期格 / 有任务的日子的小点 + 5 个状态修饰
+      // 日历：箭头 / 日期格 / 三态底色 + 今天 / 选中 / 拖拽高亮
       '.cl-nav',
       '.cl-day',
       '.cl-day:hover',
-      '.cl-day.has',
+      '.cl-day.doing',
+      '.cl-day.done',
       '.cl-day.empty',
       '.cl-day.today',
       '.cl-day.cur',
-      '.cl-dot',
       // 插件挂载点
       '.cl-root',
     ]

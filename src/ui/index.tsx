@@ -31,7 +31,7 @@ export function Hw({
  */
 export function Sheet({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0 bg-paper border border-rule2 rounded-sm p-6 pb-7 pl-8 relative shadow-paper">
+    <div className="flex flex-col flex-1 min-h-0 min-w-[560px] bg-paper border border-rule2 rounded-sm p-6 pb-7 pl-8 relative shadow-paper">
       <div
         aria-hidden
         className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-sm bg-linear-to-b from-soft from-0 via-soft2 via-40 to-soft2 to-60 to-soft to-100"

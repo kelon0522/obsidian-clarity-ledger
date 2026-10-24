@@ -143,6 +143,26 @@
   `setDragPayload(null)` 顺带清。判据：任何「一次拖拽只有一个」的状态，都不能按行存。
 - 全局化之后**不需要再拿 ref 兜重渲染时间差** —— 模块变量就是同步的最新值。
 
+## 日历三态（2026-10-24 定案，ADR-0001）
+- 底色表达三态：无待办透明 / 有未完成 `--color-soft` / 全部完成 `--color-ok`（`#dfeada`，全项目唯一非玫红语义色）。
+- 底色被占满后，「今天」= 数字下方 2px 短横线（`.cl-day.today::after`），「选中日」= 2px inset 玫红环（`.cl-day.cur`）。
+  **三个信号各占一个通道**，可以叠加；任何占填充通道的新状态都得先想清楚会不会盖掉状态色。
+- `note` 不参与三态（只有回顾的天 = 无待办）；`.cl-dot` 已删除，别再往日期格里加点。
+- 悬停不能改底色，用 `inset 0 0 0 1px` 细线 + `:not(.cur)`；**别用 outline**（会压掉 `.cl-root :focus-visible`）。
+- 日历 CSS **有两份副本**（`@layer components` 内 + 宿主隔离层外），改一条规则要同步两处。
+- **状态色画在 `.cl-day::before` 上、`inset: 2px`**，不整格铺满 —— 铺满时相邻同色日会粘成一片
+  （`gap-px` 的 1px 在缩放/抗锯齿后等于不存在），格子边界消失 = 主理人说的「遮挡」。
+  数字必须包 `<span>` 提到 `z-index: 1`，否则被伪元素盖住。
+- 日历几何**一律 px，不用 rem**：rem 跟着宿主字号与显示缩放漂移。`.cl-day` 要显式
+  `font-size: 12px`，否则被 `.cl-cal button` 的 `font-size: inherit` 接管。
+- **日期格绝不能用 `aspect-ratio`**：它会拿行高反推宽度，格子比列宽就压进右邻格
+  （相邻同色连成一片，且与缩放无关）。固定写法：`box-sizing: border-box; width: 100%; height: 24px`。
+- 日历永远 `w-48`（**不能带 `max-lg:w-full`**，否则窄窗口吃掉整宽、主区被挤出视口）；
+  窄窗口靠主区 `overflow-x-auto` 横向滚动，Sheet 用 `min-w-[560px]` 兜底。
+
+## 用词
+- 界面统一说「待办」，不是「任务」。`GLOSSARY.md` 是词表准绳，新增领域词先查它再动手。
+
 ## 设计倾向 / 杂项
 - 文案：中文 + 结构化 Markdown，描述性小标题（不用一二三），拒过重 AI 味。
 - Pillow 隔离 venv：`C:/Users/kelon/.workbuddy/binaries/python/envs/icon-resize`。

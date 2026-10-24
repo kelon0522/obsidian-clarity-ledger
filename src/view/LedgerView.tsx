@@ -96,7 +96,7 @@ export function LedgerView() {
       ) : (
         /* 主区占满剩余高度，把空间让给内部的轨道容器 */
         <div
-          className="flex-1 min-h-0 flex gap-4 px-4 pt-4 pb-4 max-w-[1180px] w-full mx-auto items-stretch"
+          className="flex-1 min-h-0 flex gap-4 px-4 pt-4 pb-4 max-w-[1180px] w-full mx-auto items-stretch overflow-x-auto"
         >
           <Calendar />
           <Sheet>

@@ -33,6 +33,12 @@
   --color-soft: #f9dce7;
   --color-soft2: #f2c6d8;
 
+  /* 完成态：全部做完的日子用的绿。
+     全项目唯一的非玫红语义色 —— 挑的是纸面上的淡灰绿，
+     明度贴近 --color-soft，并排放着不会有一块「跳出来」。 */
+  --color-ok: #dfeada;
+  --color-ok2: #3f6e3a;
+
   /* 文字 */
   --color-text: #332e28;
   --color-dim: #8c8377;
@@ -92,7 +98,13 @@
   }
 
   .cl-day {
-    aspect-ratio: 1 / 1;
+    /* **不用 aspect-ratio**。它会拿行高反推宽度，格子一旦比网格列宽就压进右邻格，
+       表现就是「色块互相遮挡」，而且和缩放无关 —— 是布局反馈，不是像素取整。
+       宽跟列走（100% + box-sizing），高写死，两个方向都不再互相推导。 */
+    box-sizing: border-box;
+    width: 100%;
+    height: 24px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -102,41 +114,68 @@
     background: transparent;
     border: 0;
     cursor: pointer;
+    /* 字号与行高写死：`font-size: inherit` 会跟着宿主字号和显示缩放走，
+       数字一大就撑破格子。日历的几何一律用 px，不用 rem ——
+       rem 同样跟着根字号漂。 */
+    font-size: 12px;
+    line-height: 1;
   }
-  .cl-day:hover {
-    background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+  /* 状态色画在**格子内部的一小块**上，不铺满整格。
+     铺满时相邻同色的两天会粘成一片（`gap-px` 那 1px 在缩放/手写体下等于不存在），
+     格子边界消失，看起来就是色块压住了数字。缩进 2px 后每块永远有缝。 */
+  .cl-day::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    z-index: 0;
+    border-radius: 3px;
+    background: transparent;
   }
-  .cl-day.has {
+  /* 数字压在色块之上 —— ::before 是绝对定位，会盖住正常流里的文字 */
+  .cl-day > span {
+    position: relative;
+    z-index: 1;
+  }
+  /* 悬停只描一圈细线，**不动底色** —— 底色是状态色，一改就把三态盖掉了。
+     不用 outline：`.cl-root :focus-visible` 用的正是 outline，同优先级下
+     会被这条压掉，键盘焦点的可见性就没了。 */
+  .cl-day:hover:not(.cur) {
+    box-shadow: inset 0 0 0 1px var(--color-rule2);
+  }
+  /* 三态靠底色，不靠小圆点 —— 24px 的格子里只有整块面积够做三分 */
+  .cl-day.doing {
     color: var(--color-ink2);
   }
-  .cl-day.has:hover {
+  .cl-day.doing::before {
     background: var(--color-soft);
+  }
+  .cl-day.done {
+    color: var(--color-ok2);
+  }
+  .cl-day.done::before {
+    background: var(--color-ok);
   }
   .cl-day.empty {
     color: var(--color-dim2);
   }
-  .cl-day.today {
-    border: 1px solid var(--color-ink2);
-  }
-  /* 「今天选中的那天」= 实心玫红块，用户最直观的对错信号 */
-  .cl-day.cur {
-    background: var(--color-ink);
-    color: #fff;
-  }
-  .cl-day.cur:hover {
-    background: var(--color-ink);
-  }
-  /* 有任务的日子打一个小点 */
-  .cl-dot {
+  /* 今天 = 数字下方一道短横线（下标）。
+     **不再用边框** —— 边框让给「选中」，两个信号各占一个通道才不打架。 */
+  .cl-day.today::after {
+    content: '';
     position: absolute;
-    bottom: 0.2rem;
-    width: 0.2rem;
-    height: 0.2rem;
-    border-radius: 9999px;
-    background: var(--color-ink2);
+    left: 50%;
+    bottom: 3px;
+    width: 7px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--color-ink);
+    transform: translateX(-50%);
+    z-index: 2;
   }
-  .cl-day.cur .cl-dot {
-    background: #fff;
+  /* 选中 = 2px 内描边环，不再实心填充 —— 填充会把状态色盖掉。
+     inset box-shadow 不改格子尺寸（border 会让 7 列错位）。 */
+  .cl-day.cur {
+    box-shadow: inset 0 0 0 2px var(--color-ink);
   }
 }
 
@@ -303,9 +342,13 @@
   color: var(--color-ink);
 }
 
-/* 日期格：正方形 + 各自的文字色 */
+/* 日期格：固定高度 + 宽度跟列走 */
 .cl-cal .cl-day {
-  aspect-ratio: 1 / 1;
+  /* 不用 aspect-ratio —— 见 @layer 里那份说明（两处必须同改） */
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -314,46 +357,69 @@
   border-radius: 3px;
   background: transparent;
   border: 0;
+  /* 字号行高写死（覆盖上面 reset 的 inherit）——
+     宿主字号或显示缩放一变，数字就撑破格子。几何一律 px。 */
+  font-size: 12px;
+  line-height: 1;
 }
-.cl-cal .cl-day:hover {
-  background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+/* 状态色画在格子内部的一小块上，不铺满整格。理由见 @layer 里那份（两处必须同改） */
+.cl-cal .cl-day::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  border-radius: 3px;
+  background: transparent;
 }
-.cl-cal .cl-day.has {
+.cl-cal .cl-day > span {
+  position: relative;
+  z-index: 1;
+}
+/* 悬停：细线，不动底色 */
+.cl-cal .cl-day:hover:not(.cur) {
+  box-shadow: inset 0 0 0 1px var(--color-rule2);
+}
+/* 三态：无任务 .empty / 有未完成 .doing / 全部完成 .done */
+.cl-cal .cl-day.doing {
   color: var(--color-ink2);
 }
-.cl-cal .cl-day.has:hover {
+.cl-cal .cl-day.doing::before {
   background: var(--color-soft);
+}
+.cl-cal .cl-day.done {
+  color: var(--color-ok2);
+}
+.cl-cal .cl-day.done::before {
+  background: var(--color-ok);
 }
 .cl-cal .cl-day.empty {
   color: var(--color-dim2);
 }
-.cl-cal .cl-day.today {
-  border: 1px solid var(--color-ink2);
+/* 今天：数字下方短横线，不用边框（边框归「选中」） */
+.cl-cal .cl-day.today::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  width: 7px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-ink);
+  transform: translateX(-50%);
+  z-index: 2;
 }
+/* 选中：2px 内描边环，不填充 —— 填充会盖掉状态底色 */
 .cl-cal .cl-day.cur {
-  background: var(--color-ink);
-  color: #fff;
-}
-.cl-cal .cl-day.cur:hover {
-  background: var(--color-ink);
+  box-shadow: inset 0 0 0 2px var(--color-ink);
 }
 /* 待办被拖到日期格上的高亮。必须在 @layer 外 —— 同上面的隔离层，
    进了 layer 会被主题的 button 样式压掉。
    用 inset box-shadow 而不是 border：不改格子尺寸（border 会让格子跳）。 */
 .cl-cal .cl-day.drop {
-  background: var(--color-soft);
   box-shadow: inset 0 0 0 2px var(--color-ink);
 }
-.cl-cal .cl-dot {
-  position: absolute;
-  bottom: 0.2rem;
-  width: 0.2rem;
-  height: 0.2rem;
-  border-radius: 9999px;
-  background: var(--color-ink2);
-}
-.cl-cal .cl-day.cur .cl-dot {
-  background: #fff;
+.cl-cal .cl-day.drop::before {
+  background: var(--color-soft);
 }
 
 /* ==================================================================

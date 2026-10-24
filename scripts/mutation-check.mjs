@@ -64,7 +64,9 @@ export const MUTATIONS = [
     from: /\n\.cl-cal button \{/,
     to: '\n@layer cl-bad {\n.cl-cal button {',
     expectRed: ['隔离层不在'],
-    after: (src) => src.replace(/(\n\.cl-day\.cur \.cl-dot \{[^}]*\})/, '$1\n}'),
+    // 注进 @layer 之后少一个收尾花括号，这里补在日历段最后一条规则后面。
+    // 锚点必须跟着 CSS 改 —— 锚不上就等于这条变异从未生效过。
+    after: (src) => src.replace(/(\n\.cl-cal \.cl-day\.drop \{[^}]*\})/, '$1\n}'),
   },
   {
     name: '清掉 button 的一项 reset（灰底方块会露出来）',

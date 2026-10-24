@@ -59,12 +59,23 @@ export function Calendar() {
   const days = new Date(y, mo + 1, 0).getDate()
   const today = dkey(new Date())
 
-  const hasContent = (k: string) => {
-    const d = db[k]
-    return !!(d && ((d.note && d.note.trim()) || (d.tasks && d.tasks.length)))
+  /**
+   * 日期格的三态只看待办，**不看笔记**：
+   * 无待办 = 那天空着；全部完成 = 每条 act 都非 null；其余 = 有未完成。
+   *
+   * note（每日回顾）刻意不参与 —— 日历回答的是「这天待办做完没有」，
+   * 不回答「这天有没有写字」。只有回顾、没有待办的日子按「无待办」渲染。
+   */
+  const dayState = (k: string) => {
+    const ts = db[k]?.tasks ?? []
+    const done = ts.filter((t) => t.act != null).length
+    const st = ts.length === 0 ? 'empty' : done === ts.length ? 'done' : 'doing'
+    return { st, total: ts.length, done }
   }
 
-  const filled = Object.keys(db).filter(hasContent).sort()
+  const tasked = Object.keys(db)
+    .filter((k) => (db[k]?.tasks.length ?? 0) > 0)
+    .sort()
 
   return (
     /* cl-cal 是给宿主环境用的样式钩子。
@@ -72,7 +83,7 @@ export function Calendar() {
        按 CSS 层叠规则不分层的永远赢，所以这里的 bg-ink / aspect-square 全被
        主题的 button 样式压掉（表现：格子有灰底和边框、宽度被 padding 撑开、
        「今天」不是实心块）。Web 版不需要它，插件的 styles.css 里会覆盖。 */
-    <aside className="cl-cal w-48 flex-none sticky top-16 max-lg:w-full max-lg:static">
+    <aside className="cl-cal w-48 flex-none sticky top-16">
       <div className="bg-paper border border-rule2 rounded-sm p-3 shadow-card">
         <div className="flex items-center gap-1.5 mb-2.5">
           <button
@@ -109,7 +120,7 @@ export function Calendar() {
           {Array.from({ length: days }).map((_, i) => {
             const d = i + 1
             const k = `${y}-${pad2(mo + 1)}-${pad2(d)}`
-            const c = hasContent(k)
+            const { st, total, done } = dayState(k)
             const wk = parseK(k).getDay()
             return (
               <button
@@ -125,28 +136,33 @@ export function Calendar() {
                   if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHoverKey(null)
                 }}
                 aria-current={k === today ? 'date' : undefined}
-                aria-label={`${mo + 1}月${d}日 周${WEEK[wk]}，${c ? '有记录' : '无记录'}`}
+                aria-label={`${mo + 1}月${d}日 周${WEEK[wk]}，${
+                  st === 'empty'
+                    ? '无待办'
+                    : st === 'done'
+                      ? `${total} 条待办全部完成`
+                      : `${total} 条待办，还有 ${total - done} 条未完成`
+                }`}
                 /* cl-day 系列是给宿主环境的钩子（Obsidian 主题不分层，会压掉
                    Tailwind 的工具类）。规则写在 plugin/src/index.css 的
                    @layer **外面** —— 放进 layer 等于没写。 */
                 className={`cl-day font-hw text-xs cursor-pointer
-                  ${c ? 'has' : 'empty'}
+                  ${st}
                   ${k === today ? 'today' : ''}
                   ${k === cur ? 'cur' : ''}
                   ${hoverKey === k ? 'drop' : ''}`}
               >
-                {d}
-                {/* 红点只表示「有记录」，图标样式不变 */}
-                {c && <i className="cl-dot" />}
+                {/* 数字要包一层：状态色块是绝对定位的 ::before，会盖住正常流里的文字 */}
+                <span>{d}</span>
               </button>
             )
           })}
         </div>
 
         <div className="font-hw text-[11.5px] text-dim2 mt-2.5 pt-2 border-t border-dashed border-rule2 leading-relaxed">
-          有记录的日子：<b className="text-ink2 font-normal">{filled.length}</b> 天
+          有待办的日子：<b className="text-ink2 font-normal">{tasked.length}</b> 天
           <br />
-          {filled.length ? `最近 ${filled[filled.length - 1]!.slice(5)}` : '—'}
+          粉＝有未完成　绿＝全部完成
           <br />
           把待办拖到某个日期上，就移到那天
         </div>
